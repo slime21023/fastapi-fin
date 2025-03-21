@@ -4,25 +4,14 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [
-    { name = "kevinchueh", email = "kevinchueh@retailingdata.com.tw" }
+    { name = "kevinchueh", email = "slime21023@gmail.com" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.11",
-    "lilya>=0.12.10",
+    "itsdangerous>=2.2.0",
 ]
-
-[project.scripts]
-fastapi-fin = "fastapi_fin:main"
 
 [build-system]
-requires = ["flit_core>=3.9.0"]
-build-backend = "flit_core.buildapi"
-
-[tool.uv]
-package = true
-
-[dependency-groups]
-dev = [
-    "flit>=3.11.0",
-]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
