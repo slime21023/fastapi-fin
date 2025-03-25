@@ -2,6 +2,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.datastructures import URL, MutableHeaders
 from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -23,6 +24,7 @@ __all__ = [
     "TrustedHostMiddleware",
     "HTTPSRedirectMiddleware",
     "CSRFMiddleware",
+    "SessionMiddleware",
 ]
 
 
