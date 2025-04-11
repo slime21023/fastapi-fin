@@ -1,0 +1,124 @@
+<fastapi_fin_standards>
+
+<design_philosophy>
+- Minimalist Design: Provide lightweight encapsulation, avoiding unnecessary complexity
+- Functional Style: Adopt hooks pattern, promoting composition and reuse
+- FastAPI Integration: Seamlessly leverage FastAPI's native dependency injection system
+- Intuitive Usability: Keep API concise and clear, reducing learning curve
+- Flexible Composition: Support composition between hooks to build complex logic
+- Type Safety: Full support for type hints, enhancing development experience
+</design_philosophy>
+
+<naming_conventions>
+- Use `use_*` prefix for all hooks functions
+- Use `snake_case` for all functions and variables
+- Use `PascalCase` for service classes (e.g., `UserService`)
+- Use `*_factory` suffix for factory functions (e.g., `user_service_factory`)
+- Use intuitive verbs as keys when hooks return dictionaries with multiple functionalities
+- Use descriptive names for decorators and higher-order functions (e.g., `with_cache`)
+</naming_conventions>
+
+<hooks_pattern>
+- Mark all hooks functions with the `@hook` decorator
+- Hooks functions should return a single value or a functionality dictionary
+- Single-functionality hooks return values directly (e.g., `use_db` returns database connection)
+- Multi-functionality hooks return dictionaries (e.g., `use_auth` returns `{"login": fn, "logout": fn}`)
+- Hooks can return class instances to provide object-oriented style
+- Hooks can inject other hooks via Depends, establishing composition
+- Hooks functions should remain pure, avoiding side effects
+</hooks_pattern>
+
+<dependency_injection>
+- Use FastAPI's Depends system to implement hooks injection
+- Hooks must explicitly declare their dependencies when defined
+- Avoid circular dependencies, maintaining a clear and manageable dependency graph
+- Provide meaningful default values to reduce caller burden
+- Support optional dependencies using Optional type hints
+- Dependencies should be explicit, avoiding hidden dependency relationships
+- Use Depends(use_x()) rather than use_x for injecting hooks
+</dependency_injection>
+
+<composition_patterns>
+- Basic Composition: Use Depends within hooks to inject other hooks
+- Service Composition: Use `create_service(factory)` to establish services and inject dependencies
+- Conditional Composition: Use factory functions to create parameterized hooks
+- Chained Composition: Return APIs that support method chaining
+- Namespacing: Use namespaces to isolate related functionalities
+- Higher-Order Hooks: Create functions that transform other hooks
+- Composers: Use `compose_hooks` to combine results from multiple hooks
+</composition_patterns>
+
+<state_management>
+- Use `use_state` to manage request-scoped state
+- Use `use_context` to provide enhanced context management
+- Use namespaces to implement isolated state spaces
+- Pass state explicitly through hooks, avoiding global variables
+- Maintain immutability of state objects, returning new instances rather than modifying
+- Use factory patterns to create initial state
+- Treat state as an uncontrollable resource, handle with care
+</state_management>
+
+<error_handling>
+- Use `use_error_handler` to provide consistent error handling patterns
+- Hooks should handle internal errors transparently, providing clear exceptions
+- Use standardized error messages and status codes
+- Avoid silent failures, always provide meaningful error information
+- Support error transformation, converting low-level errors to domain-level errors
+- Distinguish between business logic errors and system errors
+- Ensure error handling does not leak sensitive information
+</error_handling>
+
+<async_support>
+- Support both synchronous and asynchronous hooks
+- Define asynchronous hooks using `async def`
+- Use `await` to call results of asynchronous dependencies
+- Provide `use_task_manager` for handling background tasks
+- Avoid calling asynchronous functions in synchronous hooks
+- Distinguish between synchronous and asynchronous context use cases
+- Support long-connection scenarios (WebSocket, SSE)
+</async_support>
+
+<testing>
+- Design hooks as testable units
+- Provide test doubles (e.g., `MockUserService`)
+- Use `override_dependency` to replace hooks in tests
+- Write unit tests focusing on individual hooks
+- Write integration tests combining multiple hooks
+- Use factory functions to simplify test setup
+- Isolate external dependencies like databases and APIs
+</testing>
+
+<best_practices>
+- Keep hooks functions focused on single responsibilities
+- Explicitly declare all dependencies in function signatures
+- Provide meaningful function and parameter naming
+- Use type hints to enhance readability and tool support
+- Write descriptive docstrings
+- Avoid global state and side effects
+- Use parameter default values to reduce configuration burden
+- Return immutable data structures, avoiding hidden modifications
+- Organize hooks in layers: foundation layer, service layer, controller layer
+</best_practices>
+
+<project_structure>
+- Core Module: `core.py` containing `@hook` decorator and foundation hooks
+- Request Handling: `request.py` containing request-related hooks
+- Response Handling: `response.py` containing response-related hooks
+- State Management: `state.py` containing state and context management
+- Configuration Tools: `config.py` containing configuration and environment-related hooks
+- Resource Management: `resource.py` containing resource lifecycle management
+- Logging Tools: `logger.py` containing logging-related hooks
+- Service Patterns: `service.py` containing service creation and management
+</project_structure>
+
+<package_interface>
+- Export all main hooks functions
+- Export `@hook` decorator for creating custom hooks
+- Export utility functions like `compose_hooks` and `conditional_depend`
+- Export type definitions to support type safety
+- Provide version information via `__version__`
+- Export standard error classes and utilities
+- Provide simplified import via `__all__` list
+</package_interface>
+
+</fastapi_fin_standards>

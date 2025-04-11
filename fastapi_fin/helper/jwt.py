@@ -36,13 +36,12 @@ class JWTHelper:
         Returns:
             生成的 JWT 令牌
         """
-        to_encode = data.copy()
-
-        expire = datetime.now(datetime.timezone.utc) + timedelta(
-            minutes=expires_delta if expires_delta else self.token_expire_minutes
-        )
-
-        to_encode.update({"exp": expire})
+        to_encode = {
+            **data,
+            "exp": datetime.now(datetime.timezone.utc) + timedelta(
+                minutes=expires_delta if expires_delta else self.token_expire_minutes
+            ),
+        }
 
         return jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
 
