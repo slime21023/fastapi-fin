@@ -17,12 +17,12 @@ from .decorators import (
     trace,
     use_interceptor,
 )
-from .registry import MetadataRegistry
+from .registry import ApplicationRegistry
 
 __all__ = [
+    "ApplicationRegistry",
     "CompiledApplication",
     "CompiledRoute",
-    "MetadataRegistry",
     "compile_application",
     "connect",
     "controller",

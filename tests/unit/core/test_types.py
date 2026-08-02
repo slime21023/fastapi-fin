@@ -6,13 +6,13 @@ from fastapi_fin.application import CompiledApplication
 from fastapi_fin.core import (
     CachePolicy,
     ConfigSnapshot,
-    ContainerSnapshot,
     DeclarationError,
     EventSubscription,
     GuardRule,
     HttpMethod,
     InterceptorSpec,
     MetadataSnapshot,
+    ProviderRegistry,
     normalize_methods,
     normalize_path,
 )
@@ -65,13 +65,13 @@ def test_numeric_options_reject_bool_subclasses() -> None:
     with pytest.raises(TypeError):
         EventSubscription(event_type=object, handler=lambda _event: None, priority=True)
     with pytest.raises(TypeError):
-        ContainerSnapshot(version=True)
+        ProviderRegistry(version=True)
     with pytest.raises(TypeError):
         ConfigSnapshot(version=True)
     with pytest.raises(TypeError):
         MetadataSnapshot(version=True)
     with pytest.raises(TypeError):
-        CompiledApplication(registry_version=True)
+        CompiledApplication(metadata_version=True)
 
 
 def test_time_options_reject_non_finite_values_and_normalize_integers() -> None:

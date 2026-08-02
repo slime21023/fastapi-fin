@@ -7,7 +7,7 @@ from typing import Any, TypedDict, cast
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..application.compiler import compile_application
-from ..application.registry import MetadataRegistry
+from ..application.registry import ApplicationRegistry
 from ..core.dependency import ContainerRuntime
 from ..core.guard import GuardPolicy, GuardRule
 from ..core.interceptor import InterceptorChain, InterceptorSpec
@@ -31,10 +31,10 @@ class _FastAPIRouteOptions(TypedDict, total=False):
 
 
 def compile_router(
-    registry: MetadataRegistry,
+    registry: ApplicationRegistry,
     *,
     controller_factory: ControllerFactory | None,
-    container_runtime: ContainerRuntime | None,
+    runtime: ContainerRuntime | None,
     guard_subject_provider: Callable[..., object] | None,
     global_guards: tuple[GuardRule, ...],
     global_interceptors: tuple[InterceptorSpec, ...],
@@ -46,9 +46,9 @@ def compile_router(
         id(controller_metadata): _create_controller(
             controller_metadata,
             controller_factory=controller_factory,
-            container_runtime=container_runtime,
+            runtime=runtime,
         )
-        for controller_metadata in registry.snapshot.controllers
+        for controller_metadata in registry.metadata.controllers
     }
 
     compiled_application = compile_application(
@@ -57,7 +57,7 @@ def compile_router(
             controller_metadata,
             instances[id(controller_metadata)],
             route,
-            container_runtime=container_runtime,
+            runtime=runtime,
         ),
         global_guards=global_guards,
         global_interceptors=global_interceptors,
@@ -81,12 +81,12 @@ def _create_controller(
     metadata: ControllerMetadata,
     *,
     controller_factory: ControllerFactory | None,
-    container_runtime: ContainerRuntime | None,
+    runtime: ContainerRuntime | None,
 ) -> object | None:
     if (
         controller_factory is None
-        and container_runtime is not None
-        and container_runtime.snapshot.find(metadata.controller) is not None
+        and runtime is not None
+        and runtime.providers.find(metadata.controller) is not None
     ):
         return None
 
@@ -102,14 +102,14 @@ def _compile_route(
     instance: object | None,
     metadata: RouteMetadata,
     *,
-    container_runtime: ContainerRuntime | None,
+    runtime: ContainerRuntime | None,
 ) -> Endpoint:
     endpoint_name = getattr(metadata.endpoint, "__name__", metadata.name)
     if instance is None:
-        if container_runtime is None:
+        if runtime is None:
             raise AdapterError("container runtime is required for lazy controller resolution")
         endpoint = build_request_controller_endpoint(
-            container_runtime,
+            runtime,
             controller_metadata,
             metadata.endpoint,
             endpoint_name,

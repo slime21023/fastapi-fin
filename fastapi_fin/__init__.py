@@ -4,9 +4,9 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 from .application import (
+    ApplicationRegistry,
     CompiledApplication,
     CompiledRoute,
-    MetadataRegistry,
     compile_application,
     connect,
     controller,
@@ -30,7 +30,6 @@ from .core import (
     CacheStore,
     ConfigSnapshot,
     ContainerRuntime,
-    ContainerSnapshot,
     ControllerMetadata,
     DeclarationError,
     ErrorHandler,
@@ -43,14 +42,15 @@ from .core import (
     HttpMethod,
     InterceptorChain,
     InterceptorSpec,
-    Lifecycle,
     MetadataSnapshot,
     ModuleMetadata,
+    Provider,
+    ProviderRegistry,
     RegistrationError,
     ResolutionContext,
     ResolutionError,
     RouteMetadata,
-    ServiceBinding,
+    Scope,
     SettingSpec,
     Subscription,
     SubscriptionSnapshot,
@@ -60,14 +60,14 @@ from .core import (
 )
 
 if TYPE_CHECKING:
-    from .adapters import AdapterError, FastAPIAdapter, container_dependency
+    from .adapters import AdapterError, FastAPIAdapter, inject
 
 __version__ = "0.1.0"
 
 
 def __getattr__(name: str) -> object:
     """Load FastAPI-dependent exports only when they are requested."""
-    if name in {"AdapterError", "FastAPIAdapter", "container_dependency"}:
+    if name in {"AdapterError", "FastAPIAdapter", "inject"}:
         adapter_module = import_module(".adapters", __name__)
         value = getattr(adapter_module, name)
         globals()[name] = value
@@ -77,6 +77,7 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "AdapterError",
+    "ApplicationRegistry",
     "ApplicationStarted",
     "ApplicationStopping",
     "CachePolicy",
@@ -85,7 +86,6 @@ __all__ = [
     "CompiledRoute",
     "ConfigSnapshot",
     "ContainerRuntime",
-    "ContainerSnapshot",
     "ControllerMetadata",
     "DeclarationError",
     "ErrorHandler",
@@ -99,22 +99,21 @@ __all__ = [
     "HttpMethod",
     "InterceptorChain",
     "InterceptorSpec",
-    "Lifecycle",
-    "MetadataRegistry",
     "MetadataSnapshot",
     "ModuleMetadata",
+    "Provider",
+    "ProviderRegistry",
     "RegistrationError",
     "ResolutionContext",
     "ResolutionError",
     "RouteMetadata",
-    "ServiceBinding",
+    "Scope",
     "SettingSpec",
     "Subscription",
     "SubscriptionSnapshot",
     "__version__",
     "compile_application",
     "connect",
-    "container_dependency",
     "controller",
     "delete",
     "get",
@@ -123,6 +122,7 @@ __all__ = [
     "get_route_metadata",
     "guard",
     "head",
+    "inject",
     "module",
     "options",
     "patch",

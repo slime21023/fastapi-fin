@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from fastapi_fin.adapters import FastAPIAdapter
-from fastapi_fin.application import MetadataRegistry, controller, get, module
+from fastapi_fin.application import ApplicationRegistry, controller, get, module
 
 
 @controller(prefix="/users")
@@ -26,7 +26,7 @@ def build_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    registry = MetadataRegistry().register_module(ApiModule)
+    registry = ApplicationRegistry().module(ApiModule)
     FastAPIAdapter(app).include(registry)
     return app
 

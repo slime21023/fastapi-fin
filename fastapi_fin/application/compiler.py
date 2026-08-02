@@ -9,7 +9,7 @@ from ..core.guard import GuardPolicy, GuardRule
 from ..core.interceptor import InterceptorChain, InterceptorSpec
 from ..core.metadata import ControllerMetadata, Endpoint, RouteMetadata
 from ..core.types import _validate_nonnegative_integer
-from .registry import MetadataRegistry
+from .registry import ApplicationRegistry
 
 EndpointResolver = Callable[[ControllerMetadata, RouteMetadata], Endpoint]
 
@@ -42,17 +42,17 @@ class CompiledRoute:
 
 @frozen(slots=True, kw_only=True)
 class CompiledApplication:
-    """Immutable route compilation result for one registry snapshot."""
+    """Immutable route compilation result for one application metadata snapshot."""
 
     routes: tuple[CompiledRoute, ...] = field(
         factory=tuple,
         converter=_normalize_routes,
     )
-    registry_version: int = field(default=0, validator=_validate_nonnegative_integer)
+    metadata_version: int = field(default=0, validator=_validate_nonnegative_integer)
 
 
 def compile_application(
-    registry: MetadataRegistry,
+    registry: ApplicationRegistry,
     *,
     endpoint_resolver: EndpointResolver,
     global_guards: Iterable[GuardRule] = (),
@@ -77,7 +77,7 @@ def compile_application(
     InterceptorChain(interceptors=normalized_interceptors)
 
     compiled_routes: list[CompiledRoute] = []
-    for controller in registry.snapshot.controllers:
+    for controller in registry.metadata.controllers:
         for route in controller.routes:
             effective_route = route
             if normalized_guards or normalized_interceptors:
@@ -98,5 +98,5 @@ def compile_application(
 
     return CompiledApplication(
         routes=tuple(compiled_routes),
-        registry_version=registry.snapshot.version,
+        metadata_version=registry.metadata.version,
     )

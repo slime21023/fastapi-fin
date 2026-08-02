@@ -4,11 +4,11 @@ import pytest
 
 from fastapi_fin.core import (
     ContainerRuntime,
-    ContainerSnapshot,
-    Lifecycle,
+    ProviderRegistry,
     RegistrationError,
     ResolutionContext,
     ResolutionError,
+    Scope,
 )
 
 
@@ -21,13 +21,34 @@ class UserService:
         self.database = database
 
 
-def test_container_resolves_annotated_dependencies_and_request_scope() -> None:
-    snapshot = (
-        ContainerSnapshot()
-        .bind(Database, Database, lifecycle=Lifecycle.SINGLETON)
-        .bind(UserService, UserService, lifecycle=Lifecycle.REQUEST)
+def test_provider_registry_provides_classes_and_builds_runtime() -> None:
+    providers = (
+        ProviderRegistry()
+        .provide(Database, scope=Scope.SINGLETON)
+        .provide(UserService, scope=Scope.REQUEST)
     )
-    runtime = ContainerRuntime(snapshot=snapshot)
+
+    runtime = ContainerRuntime(providers=providers)
+    first_context = ResolutionContext()
+    second_context = ResolutionContext()
+
+    first = runtime.resolve(UserService, first_context)
+    other_request = runtime.resolve(UserService, second_context)
+
+    assert len(providers.providers) == 2
+    assert isinstance(first, UserService)
+    assert isinstance(other_request, UserService)
+    assert first is not other_request
+    assert first.database is other_request.database
+
+
+def test_provider_runtime_resolves_annotated_dependencies_and_request_scope() -> None:
+    snapshot = (
+        ProviderRegistry()
+        .provide(Database, scope=Scope.SINGLETON)
+        .provide(UserService, scope=Scope.REQUEST)
+    )
+    runtime = ContainerRuntime(providers=snapshot)
     first_context = ResolutionContext()
     second_context = ResolutionContext()
 
@@ -42,21 +63,21 @@ def test_container_resolves_annotated_dependencies_and_request_scope() -> None:
     assert first.database is other_request.database
 
 
-def test_container_snapshot_is_immutable_and_rejects_duplicate_bindings() -> None:
-    initial = ContainerSnapshot()
-    updated = initial.bind("database", Database)
+def test_provider_registry_is_immutable_and_rejects_duplicate_providers() -> None:
+    initial = ProviderRegistry()
+    updated = initial.provide("database", Database)
 
-    assert initial.bindings == ()
-    assert len(updated.bindings) == 1
+    assert initial.providers == ()
+    assert len(updated.providers) == 1
     with pytest.raises(RegistrationError):
-        updated.bind("database", Database)
+        updated.provide("database", Database)
 
 
-def test_container_runtime_does_not_allow_snapshot_replacement() -> None:
-    runtime = ContainerRuntime(snapshot=ContainerSnapshot())
+def test_container_runtime_does_not_allow_provider_registry_replacement() -> None:
+    runtime = ContainerRuntime(providers=ProviderRegistry())
 
     with pytest.raises(AttributeError):
-        runtime.snapshot = ContainerSnapshot().bind(Database, Database)
+        runtime.providers = ProviderRegistry().provide(Database)
 
 
 def test_container_resolves_async_factory() -> None:
@@ -64,7 +85,7 @@ def test_container_resolves_async_factory() -> None:
         return Database()
 
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind("database", build_database),
+        providers=ProviderRegistry().provide("database", build_database),
     )
 
     resolved = asyncio.run(runtime.resolve_async("database"))
@@ -87,10 +108,10 @@ def test_resolution_context_closes_request_and_transient_resources_in_reverse_or
             events.append("transient")
 
     runtime = ContainerRuntime(
-        snapshot=(
-            ContainerSnapshot()
-            .bind(RequestResource, RequestResource, lifecycle=Lifecycle.REQUEST)
-            .bind(TransientResource, TransientResource, lifecycle=Lifecycle.TRANSIENT)
+        providers=(
+            ProviderRegistry()
+            .provide(RequestResource, scope=Scope.REQUEST)
+            .provide(TransientResource, scope=Scope.TRANSIENT)
         )
     )
     with ResolutionContext() as context:
@@ -104,7 +125,7 @@ def test_resolution_context_closes_request_and_transient_resources_in_reverse_or
 
 def test_resolution_context_supports_async_context_management() -> None:
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind("database", Database),
+        providers=ProviderRegistry().provide("database", Database),
     )
 
     async def resolve_in_context() -> bool:
@@ -142,10 +163,9 @@ def test_runtime_sync_cleanup_preserves_async_singletons_for_async_retry() -> No
             events.append("closed")
 
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(
+        providers=ProviderRegistry().provide(
             AsyncResource,
-            AsyncResource,
-            lifecycle=Lifecycle.SINGLETON,
+            scope=Scope.SINGLETON,
         ),
     )
     resource = runtime.resolve(AsyncResource)
@@ -166,10 +186,9 @@ def test_container_runtime_closes_async_singletons_once() -> None:
             events.append("closed")
 
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(
+        providers=ProviderRegistry().provide(
             AsyncResource,
-            AsyncResource,
-            lifecycle=Lifecycle.SINGLETON,
+            scope=Scope.SINGLETON,
         )
     )
     runtime.resolve(AsyncResource)

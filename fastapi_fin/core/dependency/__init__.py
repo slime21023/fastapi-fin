@@ -1,21 +1,22 @@
-"""Framework-independent dependency binding and runtime resolution."""
+"""Framework-independent provider registration and runtime resolution."""
 
-from .container import (
-    ContainerRuntime,
-    ContainerSnapshot,
-    ResolutionContext,
-    ServiceBinding,
+from ..types import Scope
+from .providers import (
+    Provider,
+    ProviderRegistry,
     ServiceFactory,
     ServiceToken,
-    normalize_lifecycle,
+    normalize_scope,
 )
+from .runtime import ContainerRuntime, ResolutionContext
 
 __all__ = [
     "ContainerRuntime",
-    "ContainerSnapshot",
+    "Provider",
+    "ProviderRegistry",
     "ResolutionContext",
-    "ServiceBinding",
+    "Scope",
     "ServiceFactory",
     "ServiceToken",
-    "normalize_lifecycle",
+    "normalize_scope",
 ]

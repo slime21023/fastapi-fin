@@ -3,7 +3,7 @@ import pytest
 
 from fastapi_fin import controller, get, module
 from fastapi_fin.adapters import FastAPIAdapter
-from fastapi_fin.application import MetadataRegistry
+from fastapi_fin.application import ApplicationRegistry
 
 
 @controller(prefix="/items")
@@ -20,7 +20,7 @@ class PublicApiModule:
 
 @pytest.mark.integration
 def test_complete_module_to_http_request_flow() -> None:
-    registry = MetadataRegistry().register_module(PublicApiModule)
+    registry = ApplicationRegistry().module(PublicApiModule)
     app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app) as client:

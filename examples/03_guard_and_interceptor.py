@@ -6,7 +6,7 @@ from fastapi import Header
 from fastapi.testclient import TestClient
 
 from fastapi_fin import FastAPIAdapter, GuardRule, InterceptorSpec, controller, get, guard
-from fastapi_fin.application import MetadataRegistry
+from fastapi_fin.application import ApplicationRegistry
 
 
 def current_role(x_role: str | None = Header(default=None, alias="X-Role")) -> str | None:
@@ -38,7 +38,7 @@ class AdminController:
 
 
 def build_app():
-    registry = MetadataRegistry().register_controller(AdminController)
+    registry = ApplicationRegistry().controller(AdminController)
     return FastAPIAdapter.create_app(
         registry,
         guard_subject_provider=current_role,

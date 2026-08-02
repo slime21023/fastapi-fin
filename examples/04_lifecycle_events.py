@@ -8,7 +8,7 @@ from fastapi_fin import (
     EventDispatcher,
     FastAPIAdapter,
 )
-from fastapi_fin.application import MetadataRegistry
+from fastapi_fin.application import ApplicationRegistry
 
 events: list[str] = []
 dispatcher = (
@@ -20,7 +20,7 @@ dispatcher = (
 
 def build_app():
     return FastAPIAdapter.create_app(
-        MetadataRegistry(),
+        ApplicationRegistry(),
         event_dispatcher=dispatcher,
     )
 

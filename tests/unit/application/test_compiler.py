@@ -4,8 +4,8 @@ from attrs import evolve
 import pytest
 
 from fastapi_fin.application import (
+    ApplicationRegistry,
     CompiledApplication,
-    MetadataRegistry,
     compile_application,
     controller,
     get,
@@ -36,7 +36,7 @@ class UserController:
 
 
 def test_compile_application_builds_immutable_routes_from_registry_snapshot() -> None:
-    registry = MetadataRegistry().register(get_controller_metadata(UserController))
+    registry = ApplicationRegistry().controller(get_controller_metadata(UserController))
     resolver_calls: list[str] = []
 
     def resolve(controller_metadata, route_metadata):
@@ -45,7 +45,7 @@ def test_compile_application_builds_immutable_routes_from_registry_snapshot() ->
 
     compiled = compile_application(registry, endpoint_resolver=resolve)
 
-    assert compiled.registry_version == registry.snapshot.version == 1
+    assert compiled.metadata_version == registry.metadata.version == 1
     assert [route.metadata.path for route in compiled.routes] == ["/users/"]
     assert resolver_calls == ["list_users"]
     assert compiled.routes[0].endpoint is UserController.list_users
@@ -76,7 +76,7 @@ def test_compiler_composes_global_policies_before_route_policies() -> None:
     )
     controller_metadata = get_controller_metadata(ComposedController)
     controller_metadata = evolve(controller_metadata, routes=(route_metadata,))
-    registry = MetadataRegistry().register(controller_metadata)
+    registry = ApplicationRegistry().controller(controller_metadata)
     global_guard = GuardRule(name="global", predicate=lambda _subject: True)
     global_interceptor = InterceptorSpec(
         name="global",
@@ -97,7 +97,7 @@ def test_compiler_composes_global_policies_before_route_policies() -> None:
 
 
 def test_compiler_rejects_invalid_resolver_and_policy_conflicts_early() -> None:
-    registry = MetadataRegistry().register(get_controller_metadata(UserController))
+    registry = ApplicationRegistry().controller(get_controller_metadata(UserController))
 
     with pytest.raises(DeclarationError):
         compile_application(registry, endpoint_resolver=cast("EndpointResolver", object()))
@@ -117,7 +117,7 @@ def test_compiler_rejects_invalid_resolver_and_policy_conflicts_early() -> None:
 
     with pytest.raises(RegistrationError):
         compile_application(
-            MetadataRegistry().register(controller_metadata),
+            ApplicationRegistry().controller(controller_metadata),
             endpoint_resolver=lambda _controller, route: route.endpoint,
             global_interceptors=(duplicate,),
         )

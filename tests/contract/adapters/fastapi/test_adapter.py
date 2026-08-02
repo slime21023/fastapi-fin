@@ -13,16 +13,15 @@ import pytest
 
 from fastapi_fin import AdapterError, CachePolicy, guard, use_interceptor
 from fastapi_fin.adapters import FastAPIAdapter
-from fastapi_fin.application import MetadataRegistry, controller, get, put
+from fastapi_fin.application import ApplicationRegistry, controller, get, put
 from fastapi_fin.core import (
     ApplicationStarted,
     ApplicationStopping,
     ContainerRuntime,
-    ContainerSnapshot,
     EventDispatcher,
     GuardRule,
     InterceptorSpec,
-    Lifecycle,
+    Scope,
 )
 from fastapi_fin.core.metadata import collect_controller_metadata, get_controller_metadata
 
@@ -62,7 +61,7 @@ class DocumentedController:
 
 
 def test_adapter_creates_public_fastapi_route_and_preserves_openapi() -> None:
-    registry = MetadataRegistry().register(get_controller_metadata(UserController))
+    registry = ApplicationRegistry().controller(get_controller_metadata(UserController))
     app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app) as client:
@@ -77,7 +76,7 @@ def test_adapter_creates_public_fastapi_route_and_preserves_openapi() -> None:
 
 
 def test_adapter_includes_routes_into_an_existing_fastapi_app() -> None:
-    registry = MetadataRegistry().register(get_controller_metadata(UserController))
+    registry = ApplicationRegistry().controller(get_controller_metadata(UserController))
     app = FastAPI()
 
     @app.get("/health")
@@ -97,11 +96,11 @@ def test_adapter_includes_routes_into_an_existing_fastapi_app() -> None:
 
 
 def test_adapter_rejects_include_when_runtime_lifecycle_would_be_skipped() -> None:
-    runtime = ContainerRuntime(snapshot=ContainerSnapshot())
-    adapter = FastAPIAdapter(FastAPI(), container_runtime=runtime)
+    registry = ApplicationRegistry().provide("service", object)
+    adapter = FastAPIAdapter(FastAPI())
 
     with pytest.raises(AdapterError, match=r"use FastAPIAdapter\.create_app"):
-        adapter.include(MetadataRegistry())
+        adapter.include(registry)
 
 
 def test_adapter_rejects_invalid_constructor_inputs_at_declaration_time() -> None:
@@ -122,10 +121,10 @@ def test_adapter_rejects_invalid_constructor_inputs_at_declaration_time() -> Non
             FastAPI(),
             controller_factory=cast("Callable[[type[object]], object]", object()),
         )
-    with pytest.raises(AdapterError, match="container_runtime"):
+    with pytest.raises(AdapterError, match="registry"):
         FastAPIAdapter(
             FastAPI(),
-            container_runtime=cast("ContainerRuntime", object()),
+            registry=cast("ApplicationRegistry", object()),
         )
     with pytest.raises(AdapterError, match="guard_subject_provider"):
         FastAPIAdapter(
@@ -139,16 +138,44 @@ def test_adapter_rejects_invalid_constructor_inputs_at_declaration_time() -> Non
         )
 
 
+def test_adapter_builds_runtime_from_application_registry_and_autowires_controller() -> None:
+    class GreetingService:
+        def greet(self, name: str) -> str:
+            return f"Hello, {name}!"
+
+    @controller(prefix="/greetings")
+    class GreetingController:
+        def __init__(self, service: GreetingService) -> None:
+            self.service = service
+
+        @get("/{name}")
+        def greet(self, name: str) -> dict[str, str]:
+            return {"message": self.service.greet(name)}
+
+    registry = (
+        ApplicationRegistry()
+        .controller(GreetingController)
+        .provide(GreetingService, scope=Scope.SINGLETON)
+    )
+    app = FastAPIAdapter.create_app(registry)
+
+    with TestClient(app) as client:
+        response = client.get("/greetings/Codex")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Hello, Codex!"}
+
+
 def test_adapter_rejects_invalid_lifespan_at_app_creation() -> None:
     with pytest.raises(AdapterError, match="lifespan must be callable"):
         FastAPIAdapter.create_app(
-            MetadataRegistry(),
+            ApplicationRegistry(),
             lifespan=cast("Callable[[FastAPI], AbstractAsyncContextManager[None]]", object()),
         )
 
 
 def test_adapter_mounts_http_method_convenience_decorator() -> None:
-    registry = MetadataRegistry().register(get_controller_metadata(MethodContractController))
+    registry = ApplicationRegistry().controller(get_controller_metadata(MethodContractController))
     app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app) as client:
@@ -160,7 +187,7 @@ def test_adapter_mounts_http_method_convenience_decorator() -> None:
 
 
 def test_adapter_preserves_route_options_and_pydantic_response_model() -> None:
-    registry = MetadataRegistry().register(get_controller_metadata(DocumentedController))
+    registry = ApplicationRegistry().controller(get_controller_metadata(DocumentedController))
     app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app) as client:
@@ -183,13 +210,11 @@ class Service:
     value = "from-container"
 
 
-service_runtime = ContainerRuntime(
-    snapshot=ContainerSnapshot().bind(Service, Service),
-)
+service_registry = ApplicationRegistry().provide(Service)
 service_dependency = FastAPIAdapter(
     FastAPI(),
-    container_runtime=service_runtime,
-).dependency(Service)
+    registry=service_registry,
+).inject(Service)
 service_dependency_marker = Depends(service_dependency)
 
 
@@ -263,10 +288,10 @@ class ServiceController:
 
 
 def test_adapter_translates_guards_and_interceptors() -> None:
-    registry = MetadataRegistry()
-    registry = registry.register(get_controller_metadata(ProtectedController))
-    registry = registry.register(get_controller_metadata(InterceptedController))
-    registry = registry.register(get_controller_metadata(TranslatedController))
+    registry = ApplicationRegistry()
+    registry = registry.controller(get_controller_metadata(ProtectedController))
+    registry = registry.controller(get_controller_metadata(InterceptedController))
+    registry = registry.controller(get_controller_metadata(TranslatedController))
     app = FastAPIAdapter.create_app(
         registry,
         guard_subject_provider=lambda: "member",
@@ -286,7 +311,7 @@ def test_adapter_translates_guards_and_interceptors() -> None:
 def test_adapter_caches_interceptor_results_per_route_arguments() -> None:
     global cached_calls
     cached_calls = 0
-    registry = MetadataRegistry().register(get_controller_metadata(CachedController))
+    registry = ApplicationRegistry().controller(get_controller_metadata(CachedController))
     app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app) as client:
@@ -301,7 +326,7 @@ def test_adapter_caches_interceptor_results_per_route_arguments() -> None:
 
 
 def test_adapter_applies_global_guard_to_every_route() -> None:
-    registry = MetadataRegistry().register(get_controller_metadata(UserController))
+    registry = ApplicationRegistry().controller(get_controller_metadata(UserController))
     app = FastAPIAdapter.create_app(
         registry,
         global_guards=(
@@ -316,8 +341,8 @@ def test_adapter_applies_global_guard_to_every_route() -> None:
     assert response.status_code == 403
 
 
-def test_adapter_translates_container_dependency() -> None:
-    registry = MetadataRegistry().register(get_controller_metadata(ServiceController))
+def test_adapter_injects_provider_dependency() -> None:
+    registry = ApplicationRegistry().controller(get_controller_metadata(ServiceController))
     app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app) as client:
@@ -331,9 +356,9 @@ def test_adapter_translates_resolution_errors_without_leaking_container_details(
     class MissingService:
         pass
 
-    runtime = ContainerRuntime(snapshot=ContainerSnapshot())
+    dependency_registry = ApplicationRegistry().provide("present", object)
     missing_dependency = Depends(
-        FastAPIAdapter(FastAPI(), container_runtime=runtime).dependency(MissingService)
+        FastAPIAdapter(FastAPI(), registry=dependency_registry).inject(MissingService)
     )
 
     @controller(prefix="/missing-service")
@@ -342,23 +367,20 @@ def test_adapter_translates_resolution_errors_without_leaking_container_details(
         def value(self, _service: MissingService = missing_dependency) -> dict[str, str]:
             return {"status": "unreachable"}
 
-    registry = MetadataRegistry().register(get_controller_metadata(MissingServiceController))
-    app = FastAPIAdapter.create_app(registry, container_runtime=runtime)
+    registry = ApplicationRegistry().controller(get_controller_metadata(MissingServiceController))
+    app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.get("/missing-service/")
 
     assert response.status_code == 500
     assert response.json() == {"detail": "dependency resolution failed"}
-    assert "no service binding" not in response.text
+    assert "no provider found" not in response.text
 
 
-def test_adapter_can_resolve_controller_from_container() -> None:
-    runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(UserController, UserController),
-    )
-    registry = MetadataRegistry().register(get_controller_metadata(UserController))
-    app = FastAPIAdapter.create_app(registry, container_runtime=runtime)
+def test_adapter_uses_default_controller_resolution_without_explicit_provider() -> None:
+    registry = ApplicationRegistry().controller(get_controller_metadata(UserController))
+    app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app) as client:
         response = client.get("/users/42")
@@ -378,7 +400,7 @@ def test_adapter_keeps_instances_separate_for_repeated_controller_metadata() -> 
 
     first_metadata = collect_controller_metadata(ReusedController, prefix="/first")
     second_metadata = collect_controller_metadata(ReusedController, prefix="/second")
-    registry = MetadataRegistry().register(first_metadata).register(second_metadata)
+    registry = ApplicationRegistry().controller(first_metadata).controller(second_metadata)
     factory_calls = 0
 
     def factory(controller: type[object]) -> object:
@@ -421,23 +443,16 @@ def test_adapter_resolves_request_scoped_controller_per_request() -> None:
         def value(self) -> dict[str, int]:
             return {"sequence": self.dependency.sequence}
 
-    runtime = ContainerRuntime(
-        snapshot=(
-            ContainerSnapshot()
-            .bind(
-                RequestDependency,
-                build_dependency,
-                lifecycle=Lifecycle.REQUEST,
-            )
-            .bind(
-                RequestScopedController,
-                RequestScopedController,
-                lifecycle=Lifecycle.REQUEST,
-            )
+    registry = (
+        ApplicationRegistry()
+        .controller(get_controller_metadata(RequestScopedController))
+        .provide(
+            RequestDependency,
+            build_dependency,
+            scope=Scope.REQUEST,
         )
     )
-    registry = MetadataRegistry().register(get_controller_metadata(RequestScopedController))
-    app = FastAPIAdapter.create_app(registry, container_runtime=runtime)
+    app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app) as client:
         first = client.get("/request-scoped/")
@@ -457,20 +472,19 @@ def test_adapter_initializes_non_lazy_singletons_during_startup() -> None:
         calls.append("initialized")
         return object()
 
-    runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(
-            "eager-service",
-            build_service,
-            lifecycle=Lifecycle.SINGLETON,
-            lazy=False,
-        )
+    registry = ApplicationRegistry().provide(
+        "eager-service",
+        build_service,
+        scope=Scope.SINGLETON,
+        lazy=False,
     )
-    app = FastAPIAdapter.create_app(MetadataRegistry(), container_runtime=runtime)
+    app = FastAPIAdapter.create_app(registry)
 
     assert calls == []
     with TestClient(app):
         assert calls == ["initialized"]
 
+    runtime = ContainerRuntime(providers=registry.providers)
     assert asyncio.run(runtime.resolve_async("eager-service")) is asyncio.run(
         runtime.resolve_async("eager-service")
     )
@@ -486,15 +500,13 @@ def test_adapter_closes_request_resources_after_each_request() -> None:
     def build_resource() -> RequestResource:
         return RequestResource()
 
-    runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(
-            RequestResource,
-            build_resource,
-            lifecycle=Lifecycle.REQUEST,
-        )
+    dependency_registry = ApplicationRegistry().provide(
+        RequestResource,
+        build_resource,
+        scope=Scope.REQUEST,
     )
-    dependency_adapter = FastAPIAdapter(FastAPI(), container_runtime=runtime)
-    resource_dependency = Depends(dependency_adapter.dependency(RequestResource))
+    dependency_adapter = FastAPIAdapter(FastAPI(), registry=dependency_registry)
+    resource_dependency = Depends(dependency_adapter.inject(RequestResource))
 
     @controller(prefix="/request-cleanup")
     class RequestCleanupController:
@@ -502,8 +514,16 @@ def test_adapter_closes_request_resources_after_each_request() -> None:
         def value(self, _resource: RequestResource = resource_dependency) -> dict[str, str]:
             return {"status": "ok"}
 
-    registry = MetadataRegistry().register(get_controller_metadata(RequestCleanupController))
-    app = FastAPIAdapter.create_app(registry, container_runtime=runtime)
+    registry = (
+        ApplicationRegistry()
+        .controller(get_controller_metadata(RequestCleanupController))
+        .provide(
+            RequestResource,
+            build_resource,
+            scope=Scope.REQUEST,
+        )
+    )
+    app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app) as client:
         assert client.get("/request-cleanup/").json() == {"status": "ok"}
@@ -519,17 +539,24 @@ def test_adapter_closes_singleton_resources_on_shutdown() -> None:
         def close(self) -> None:
             events.append("closed")
 
-    runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(
-            SingletonResource,
-            SingletonResource,
-            lifecycle=Lifecycle.SINGLETON,
-        )
-    )
-    runtime.resolve(SingletonResource)
-    app = FastAPIAdapter.create_app(MetadataRegistry(), container_runtime=runtime)
+    @controller(prefix="/singleton-resource")
+    class SingletonResourceController:
+        def __init__(self, resource: SingletonResource) -> None:
+            self.resource = resource
 
-    with TestClient(app):
+        @get("/")
+        def value(self) -> dict[str, str]:
+            return {"status": "ok"}
+
+    registry = (
+        ApplicationRegistry()
+        .controller(SingletonResourceController)
+        .provide(SingletonResource, scope=Scope.SINGLETON)
+    )
+    app = FastAPIAdapter.create_app(registry)
+
+    with TestClient(app) as client:
+        assert client.get("/singleton-resource/").json() == {"status": "ok"}
         assert events == []
 
     assert events == ["closed"]
@@ -559,17 +586,14 @@ def test_adapter_initializes_runtime_inside_user_lifespan_before_started() -> No
             lambda _event: lifecycle_events.append("stopping"),
         )
     )
-    runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(
-            "eager-service",
-            build_service,
-            lifecycle=Lifecycle.SINGLETON,
-            lazy=False,
-        )
+    registry = ApplicationRegistry().provide(
+        "eager-service",
+        build_service,
+        scope=Scope.SINGLETON,
+        lazy=False,
     )
     app = FastAPIAdapter.create_app(
-        MetadataRegistry(),
-        container_runtime=runtime,
+        registry,
         event_dispatcher=dispatcher,
         lifespan=user_lifespan,
     )
@@ -600,7 +624,7 @@ def test_adapter_composes_lifespan_and_dispatches_application_events() -> None:
         .subscribe(ApplicationStarted, record_started)
         .subscribe(ApplicationStopping, record_stopping)
     )
-    registry = MetadataRegistry().register(get_controller_metadata(UserController))
+    registry = ApplicationRegistry().controller(get_controller_metadata(UserController))
     app = FastAPIAdapter.create_app(registry, event_dispatcher=dispatcher)
 
     with TestClient(app):
@@ -623,7 +647,7 @@ def test_adapter_dispatches_lifecycle_events_around_user_lifespan() -> None:
         .subscribe(ApplicationStarted, lambda _event: lifecycle_events.append("started"))
         .subscribe(ApplicationStopping, lambda _event: lifecycle_events.append("stopping"))
     )
-    registry = MetadataRegistry().register(get_controller_metadata(UserController))
+    registry = ApplicationRegistry().controller(get_controller_metadata(UserController))
     app = FastAPIAdapter.create_app(
         registry,
         event_dispatcher=dispatcher,

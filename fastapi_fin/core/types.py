@@ -61,7 +61,7 @@ class HttpMethod(StrEnum):
     TRACE = "TRACE"
 
 
-class Lifecycle(StrEnum):
+class Scope(StrEnum):
     """Supported dependency lifecycles."""
 
     SINGLETON = "singleton"

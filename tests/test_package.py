@@ -4,8 +4,8 @@ import sys
 
 from fastapi_fin import FastAPIAdapter, __version__, get, get_route_metadata
 from fastapi_fin.adapters import FastAPIAdapter as AppAdapter
-from fastapi_fin.adapters import container_dependency as package_dependency
-from fastapi_fin.adapters.dependencies import container_dependency
+from fastapi_fin.adapters import inject as package_inject
+from fastapi_fin.adapters.dependencies import inject
 
 
 def test_package_exposes_version() -> None:
@@ -28,7 +28,7 @@ def test_fastapi_adapter_remains_a_lazy_root_export() -> None:
 
 def test_adapter_package_exports_layered_implementation() -> None:
     assert AppAdapter is FastAPIAdapter
-    assert package_dependency is container_dependency
+    assert package_inject is inject
 
 
 def test_core_import_does_not_eagerly_import_fastapi() -> None:

@@ -2,7 +2,13 @@
 
 from .cache import CachePolicy, CacheStore
 from .config import ConfigSnapshot, SettingSpec
-from .dependency import ContainerRuntime, ContainerSnapshot, ResolutionContext, ServiceBinding
+from .dependency import (
+    ContainerRuntime,
+    Provider,
+    ProviderRegistry,
+    ResolutionContext,
+    Scope,
+)
 from .errors import (
     DeclarationError,
     FastAPIFinError,
@@ -29,7 +35,7 @@ from .metadata import (
     get_module_metadata,
     get_route_metadata,
 )
-from .types import HttpMethod, Lifecycle, normalize_methods, normalize_path
+from .types import HttpMethod, normalize_methods, normalize_path
 
 __all__ = [
     "ApplicationStarted",
@@ -38,7 +44,6 @@ __all__ = [
     "CacheStore",
     "ConfigSnapshot",
     "ContainerRuntime",
-    "ContainerSnapshot",
     "ControllerMetadata",
     "DeclarationError",
     "ErrorHandler",
@@ -51,14 +56,15 @@ __all__ = [
     "HttpMethod",
     "InterceptorChain",
     "InterceptorSpec",
-    "Lifecycle",
     "MetadataSnapshot",
     "ModuleMetadata",
+    "Provider",
+    "ProviderRegistry",
     "RegistrationError",
     "ResolutionContext",
     "ResolutionError",
     "RouteMetadata",
-    "ServiceBinding",
+    "Scope",
     "SettingSpec",
     "Subscription",
     "SubscriptionSnapshot",

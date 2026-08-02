@@ -9,10 +9,10 @@ import pytest
 
 from fastapi_fin.core import (
     ContainerRuntime,
-    ContainerSnapshot,
     DeclarationError,
-    Lifecycle,
+    ProviderRegistry,
     ResolutionError,
+    Scope,
 )
 
 
@@ -34,16 +34,16 @@ class SingletonState:
         self.state = state
 
 
-def test_container_resolves_future_annotations_and_tracks_snapshot_versions() -> None:
-    initial = ContainerSnapshot()
+def test_provider_runtime_resolves_future_annotations_and_tracks_versions() -> None:
+    initial = ProviderRegistry()
     snapshot = (
-        initial.bind(" database ", FutureDatabase)
-        .bind(FutureDatabase, FutureDatabase)
-        .bind(FutureService, FutureService)
+        initial.provide(" database ", FutureDatabase)
+        .provide(FutureDatabase)
+        .provide(FutureService)
         .replace("database", FutureDatabase)
     )
 
-    resolved = ContainerRuntime(snapshot=snapshot).resolve(FutureService)
+    resolved = ContainerRuntime(providers=snapshot).resolve(FutureService)
 
     assert initial.version == 0
     assert snapshot.version == 4
@@ -53,12 +53,12 @@ def test_container_resolves_future_annotations_and_tracks_snapshot_versions() ->
 
 def test_container_rejects_invalid_tokens_and_sync_async_resolution() -> None:
     with pytest.raises(DeclarationError):
-        ContainerSnapshot().bind("  ", FutureDatabase)
+        ProviderRegistry().provide("  ", FutureDatabase)
 
     async def build() -> FutureDatabase:
         return FutureDatabase()
 
-    runtime = ContainerRuntime(snapshot=ContainerSnapshot().bind("db", build))
+    runtime = ContainerRuntime(providers=ProviderRegistry().provide("db", build))
     with pytest.raises(ResolutionError, match="resolve_async"):
         runtime.resolve("db")
 
@@ -72,9 +72,9 @@ def test_container_supports_explicit_string_tokens_in_annotations() -> None:
     build_service.__annotations__["database"] = "database"
 
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot()
-        .bind("database", FutureDatabase)
-        .bind("service", build_service),
+        providers=ProviderRegistry()
+        .provide("database", FutureDatabase)
+        .provide("service", build_service),
     )
 
     assert isinstance(runtime.resolve("service"), FutureDatabase)
@@ -86,9 +86,7 @@ def test_container_unwraps_annotated_service_tokens() -> None:
             self.database = database
 
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot()
-        .bind(FutureDatabase, FutureDatabase)
-        .bind(AnnotatedService, AnnotatedService),
+        providers=ProviderRegistry().provide(FutureDatabase).provide(AnnotatedService),
     )
 
     resolved = runtime.resolve(AnnotatedService)
@@ -104,9 +102,9 @@ def test_container_unwraps_annotated_string_tokens_with_future_annotations() -> 
     build_service.__annotations__["database"] = 'Annotated["database", "inject:database"]'
 
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot()
-        .bind("database", FutureDatabase)
-        .bind("service", build_service),
+        providers=ProviderRegistry()
+        .provide("database", FutureDatabase)
+        .provide("service", build_service),
     )
 
     assert isinstance(runtime.resolve("service"), FutureDatabase)
@@ -121,10 +119,10 @@ def test_container_initializes_non_lazy_singletons_on_explicit_request() -> None
         return FutureDatabase()
 
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(
+        providers=ProviderRegistry().provide(
             "database",
             build_database,
-            lifecycle="singleton",
+            scope="singleton",
             lazy=False,
         )
     )
@@ -144,10 +142,10 @@ def test_container_initializes_async_non_lazy_singletons() -> None:
         return FutureDatabase()
 
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(
+        providers=ProviderRegistry().provide(
             "database",
             build_database,
-            lifecycle=Lifecycle.SINGLETON,
+            scope=Scope.SINGLETON,
             lazy=False,
         )
     )
@@ -168,10 +166,10 @@ def test_container_deduplicates_concurrent_async_singleton_resolution() -> None:
         return FutureDatabase()
 
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(
+        providers=ProviderRegistry().provide(
             "database",
             build_database,
-            lifecycle=Lifecycle.SINGLETON,
+            scope=Scope.SINGLETON,
         ),
     )
 
@@ -197,10 +195,10 @@ def test_container_deduplicates_concurrent_sync_singleton_resolution() -> None:
         return FutureDatabase()
 
     runtime = ContainerRuntime(
-        snapshot=ContainerSnapshot().bind(
+        providers=ProviderRegistry().provide(
             "database",
             build_database,
-            lifecycle=Lifecycle.SINGLETON,
+            scope=Scope.SINGLETON,
         ),
     )
 
@@ -213,10 +211,10 @@ def test_container_deduplicates_concurrent_sync_singleton_resolution() -> None:
 
 def test_container_rejects_singleton_dependency_on_request_scope() -> None:
     runtime = ContainerRuntime(
-        snapshot=(
-            ContainerSnapshot()
-            .bind(RequestState, RequestState, lifecycle=Lifecycle.REQUEST)
-            .bind(SingletonState, SingletonState, lifecycle=Lifecycle.SINGLETON)
+        providers=(
+            ProviderRegistry()
+            .provide(RequestState, scope=Scope.REQUEST)
+            .provide(SingletonState, scope=Scope.SINGLETON)
         )
     )
 

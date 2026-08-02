@@ -1,6 +1,6 @@
 """FastAPI integration boundary for FastAPI-Fin."""
 
-from .app import CompiledRoute, FastAPIAdapter, LifespanHandler, container_dependency
+from .app import CompiledRoute, FastAPIAdapter, LifespanHandler, inject
 from .errors import AdapterError
 
 __all__ = [
@@ -8,5 +8,5 @@ __all__ = [
     "CompiledRoute",
     "FastAPIAdapter",
     "LifespanHandler",
-    "container_dependency",
+    "inject",
 ]

@@ -1,130 +1,18 @@
-"""Framework-independent dependency binding and resolution."""
+"""Runtime resolution and resource lifecycle for registered providers."""
 
 import ast
 import asyncio
-from collections.abc import Callable
 from inspect import Parameter, Signature, isawaitable, iscoroutine, isfunction, ismethod, signature
 import sys
 from threading import RLock
 import typing
 from typing import Annotated, ForwardRef, Self, get_args, get_origin, get_type_hints
 
-from attrs import define, evolve, field, frozen, setters, validators
+from attrs import define, field, setters
 
-from ..errors import DeclarationError, RegistrationError, ResolutionError
-from ..types import Lifecycle, _validate_nonnegative_integer
-
-ServiceToken = type[object] | str
-ServiceFactory = Callable[..., object]
-
-
-def _normalize_token(token: ServiceToken) -> ServiceToken:
-    if isinstance(token, type):
-        return token
-    if isinstance(token, str) and token.strip():
-        return token.strip()
-    raise DeclarationError("service token must be a type or non-empty string")
-
-
-def _validate_factory(factory: ServiceFactory) -> ServiceFactory:
-    if not callable(factory):
-        raise DeclarationError("service factory must be callable")
-    return factory
-
-
-def normalize_lifecycle(value: str | Lifecycle) -> Lifecycle:
-    """Normalize a lifecycle name at binding time."""
-    if isinstance(value, Lifecycle):
-        return value
-    try:
-        return Lifecycle(value.lower())
-    except (AttributeError, TypeError, ValueError) as error:
-        raise DeclarationError(f"unsupported dependency lifecycle: {value!r}") from error
-
-
-@frozen(slots=True, kw_only=True)
-class ServiceBinding:
-    """Immutable mapping from a service token to a factory."""
-
-    token: ServiceToken = field(converter=_normalize_token)
-    factory: ServiceFactory = field(converter=_validate_factory)
-    lifecycle: Lifecycle = field(converter=normalize_lifecycle)
-    lazy: bool = field(default=True, validator=validators.instance_of(bool))
-
-
-def _normalize_bindings(values: tuple[ServiceBinding, ...]) -> tuple[ServiceBinding, ...]:
-    normalized = tuple(values)
-    if not all(isinstance(binding, ServiceBinding) for binding in normalized):
-        raise DeclarationError("container bindings must be ServiceBinding instances")
-    return normalized
-
-
-@frozen(slots=True, kw_only=True)
-class ContainerSnapshot:
-    """Persistent collection of service bindings."""
-
-    bindings: tuple[ServiceBinding, ...] = field(
-        factory=tuple,
-        converter=_normalize_bindings,
-    )
-    version: int = field(default=0, validator=_validate_nonnegative_integer)
-
-    def bind(
-        self,
-        token: ServiceToken,
-        factory: ServiceFactory,
-        *,
-        lifecycle: str | Lifecycle = Lifecycle.TRANSIENT,
-        lazy: bool = True,
-    ) -> "ContainerSnapshot":
-        """Return a new snapshot with a previously unused binding."""
-        normalized_token = _normalize_token(token)
-        if self.find(normalized_token) is not None:
-            raise RegistrationError(f"service token is already bound: {normalized_token!r}")
-        binding = ServiceBinding(
-            token=normalized_token,
-            factory=factory,
-            lifecycle=lifecycle,
-            lazy=lazy,
-        )
-        return evolve(self, bindings=(*self.bindings, binding), version=self.version + 1)
-
-    def replace(
-        self,
-        token: ServiceToken,
-        factory: ServiceFactory,
-        *,
-        lifecycle: str | Lifecycle = Lifecycle.TRANSIENT,
-        lazy: bool = True,
-    ) -> "ContainerSnapshot":
-        """Return a new snapshot replacing one existing binding."""
-        normalized_token = _normalize_token(token)
-        if self.find(normalized_token) is None:
-            raise RegistrationError(
-                f"cannot replace an unbound service token: {normalized_token!r}"
-            )
-        replacement = ServiceBinding(
-            token=normalized_token,
-            factory=factory,
-            lifecycle=lifecycle,
-            lazy=lazy,
-        )
-        return evolve(
-            self,
-            bindings=tuple(
-                replacement if binding.token == normalized_token else binding
-                for binding in self.bindings
-            ),
-            version=self.version + 1,
-        )
-
-    def find(self, token: ServiceToken) -> ServiceBinding | None:
-        """Find a binding by token without resolving it."""
-        normalized_token = _normalize_token(token)
-        return next(
-            (binding for binding in self.bindings if binding.token == normalized_token),
-            None,
-        )
+from ..errors import ResolutionError
+from ..types import Scope
+from .providers import Provider, ProviderRegistry, ServiceFactory, ServiceToken, _normalize_token
 
 
 @define(slots=True, kw_only=True)
@@ -204,9 +92,9 @@ class ResolutionContext:
 
 @define(slots=True, kw_only=True)
 class ContainerRuntime:
-    """Runtime cache for an immutable container snapshot."""
+    """Runtime cache for an immutable provider registry."""
 
-    snapshot: ContainerSnapshot = field(on_setattr=setters.frozen)
+    providers: ProviderRegistry = field(on_setattr=setters.frozen)
     singleton_values: dict[ServiceToken, object] = field(factory=dict)
     _async_singleton_locks: dict[ServiceToken, asyncio.Lock] = field(
         factory=dict,
@@ -220,20 +108,20 @@ class ContainerRuntime:
     )
 
     def initialize(self) -> None:
-        """Eagerly initialize all non-lazy bindings synchronously."""
-        for binding in self.snapshot.bindings:
-            if not binding.lazy:
-                if binding.lifecycle is not Lifecycle.SINGLETON:
-                    raise ResolutionError("only singleton bindings can be eagerly initialized")
-                self.resolve(binding.token)
+        """Eagerly initialize all non-lazy providers synchronously."""
+        for provider in self.providers.providers:
+            if not provider.lazy:
+                if provider.scope is not Scope.SINGLETON:
+                    raise ResolutionError("only singleton providers can be eagerly initialized")
+                self.resolve(provider.token)
 
     async def initialize_async(self) -> None:
-        """Eagerly initialize all non-lazy bindings, including async factories."""
-        for binding in self.snapshot.bindings:
-            if not binding.lazy:
-                if binding.lifecycle is not Lifecycle.SINGLETON:
-                    raise ResolutionError("only singleton bindings can be eagerly initialized")
-                await self.resolve_async(binding.token)
+        """Eagerly initialize all non-lazy providers, including async factories."""
+        for provider in self.providers.providers:
+            if not provider.lazy:
+                if provider.scope is not Scope.SINGLETON:
+                    raise ResolutionError("only singleton providers can be eagerly initialized")
+                await self.resolve_async(provider.token)
 
     def close(self) -> None:
         """Release singleton resources synchronously in reverse creation order."""
@@ -256,20 +144,20 @@ class ContainerRuntime:
         token: ServiceToken,
         context: ResolutionContext | None = None,
     ) -> object:
-        """Resolve a binding using singleton, request, or transient semantics."""
+        """Resolve a provider using singleton, request, or transient semantics."""
         normalized_token = _normalize_token(token)
-        binding = self.snapshot.find(normalized_token)
-        if binding is None:
-            raise ResolutionError(f"no service binding found for token: {normalized_token!r}")
+        provider = self.providers.find(normalized_token)
+        if provider is None:
+            raise ResolutionError(f"no provider found for token: {normalized_token!r}")
 
         request_context = context or ResolutionContext()
         if request_context.closed:
             raise ResolutionError("resolution context is already closed")
-        if binding.lifecycle is Lifecycle.SINGLETON and normalized_token in self.singleton_values:
+        if provider.scope is Scope.SINGLETON and normalized_token in self.singleton_values:
             return self.singleton_values[normalized_token]
-        if binding.lifecycle is Lifecycle.REQUEST and normalized_token in request_context.values:
+        if provider.scope is Scope.REQUEST and normalized_token in request_context.values:
             return request_context.values[normalized_token]
-        if binding.lifecycle is Lifecycle.SINGLETON:
+        if provider.scope is Scope.SINGLETON:
             if normalized_token in request_context.resolving:
                 raise _circular_dependency_error(normalized_token, request_context)
             lock = self._sync_singleton_locks.setdefault(normalized_token, RLock())
@@ -277,33 +165,33 @@ class ContainerRuntime:
                 if normalized_token in self.singleton_values:
                     return self.singleton_values[normalized_token]
                 return self._resolve_sync_uncached(
-                    binding,
+                    provider,
                     normalized_token,
                     request_context,
                 )
-        return self._resolve_sync_uncached(binding, normalized_token, request_context)
+        return self._resolve_sync_uncached(provider, normalized_token, request_context)
 
     def _resolve_sync_uncached(
         self,
-        binding: ServiceBinding,
+        provider: Provider,
         normalized_token: ServiceToken,
         request_context: ResolutionContext,
     ) -> object:
         if normalized_token in request_context.resolving:
             raise _circular_dependency_error(normalized_token, request_context)
-        self._validate_lifecycle_dependency(binding, request_context)
+        self._validate_scope_dependency(provider, request_context)
 
         request_context.resolving.append(normalized_token)
         try:
-            value = self._call_factory(binding.factory, request_context)
+            value = self._call_factory(provider.factory, request_context)
         finally:
             request_context.resolving.pop()
 
-        if binding.lifecycle is Lifecycle.SINGLETON:
+        if provider.scope is Scope.SINGLETON:
             self.singleton_values[normalized_token] = value
         else:
             request_context.track(value)
-            if binding.lifecycle is Lifecycle.REQUEST:
+            if provider.scope is Scope.REQUEST:
                 request_context.values[normalized_token] = value
         return value
 
@@ -336,15 +224,15 @@ class ContainerRuntime:
     ) -> object:
         """Resolve sync or async factories using the same lifecycle rules."""
         normalized_token = _normalize_token(token)
-        binding = self.snapshot.find(normalized_token)
-        if binding is None:
-            raise ResolutionError(f"no service binding found for token: {normalized_token!r}")
+        provider = self.providers.find(normalized_token)
+        if provider is None:
+            raise ResolutionError(f"no provider found for token: {normalized_token!r}")
 
         request_context = context or ResolutionContext()
         if request_context.closed:
             raise ResolutionError("resolution context is already closed")
 
-        if binding.lifecycle is Lifecycle.SINGLETON:
+        if provider.scope is Scope.SINGLETON:
             if normalized_token in self.singleton_values:
                 return self.singleton_values[normalized_token]
             if normalized_token in request_context.resolving:
@@ -357,36 +245,36 @@ class ContainerRuntime:
                 if normalized_token in self.singleton_values:
                     return self.singleton_values[normalized_token]
                 return await self._resolve_async_uncached(
-                    binding,
+                    provider,
                     normalized_token,
                     request_context,
                 )
 
-        return await self._resolve_async_uncached(binding, normalized_token, request_context)
+        return await self._resolve_async_uncached(provider, normalized_token, request_context)
 
     async def _resolve_async_uncached(
         self,
-        binding: ServiceBinding,
+        provider: Provider,
         normalized_token: ServiceToken,
         request_context: ResolutionContext,
     ) -> object:
-        if binding.lifecycle is Lifecycle.REQUEST and normalized_token in request_context.values:
+        if provider.scope is Scope.REQUEST and normalized_token in request_context.values:
             return request_context.values[normalized_token]
         if normalized_token in request_context.resolving:
             raise _circular_dependency_error(normalized_token, request_context)
-        self._validate_lifecycle_dependency(binding, request_context)
+        self._validate_scope_dependency(provider, request_context)
 
         request_context.resolving.append(normalized_token)
         try:
-            value = await self._call_factory_async(binding.factory, request_context)
+            value = await self._call_factory_async(provider.factory, request_context)
         finally:
             request_context.resolving.pop()
 
-        if binding.lifecycle is Lifecycle.SINGLETON:
+        if provider.scope is Scope.SINGLETON:
             self.singleton_values[normalized_token] = value
         else:
             request_context.track(value)
-            if binding.lifecycle is Lifecycle.REQUEST:
+            if provider.scope is Scope.REQUEST:
                 request_context.values[normalized_token] = value
         return value
 
@@ -410,19 +298,19 @@ class ContainerRuntime:
         except TypeError as error:
             raise ResolutionError(f"failed to call service factory: {factory!r}") from error
 
-    def _validate_lifecycle_dependency(
+    def _validate_scope_dependency(
         self,
-        binding: ServiceBinding,
+        provider: Provider,
         context: ResolutionContext,
     ) -> None:
-        if binding.lifecycle is not Lifecycle.REQUEST:
+        if provider.scope is not Scope.REQUEST:
             return
         for parent_token in context.resolving:
-            parent_binding = self.snapshot.find(parent_token)
-            if parent_binding is not None and parent_binding.lifecycle is Lifecycle.SINGLETON:
+            parent_provider = self.providers.find(parent_token)
+            if parent_provider is not None and parent_provider.scope is Scope.SINGLETON:
                 raise ResolutionError(
                     "singleton services cannot depend on request-scoped services: "
-                    f"{parent_token!r} -> {binding.token!r}"
+                    f"{parent_token!r} -> {provider.token!r}"
                 )
 
 

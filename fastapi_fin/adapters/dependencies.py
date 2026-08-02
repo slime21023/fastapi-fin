@@ -14,8 +14,8 @@ from .errors import AdapterError
 
 __all__ = [
     "build_request_controller_endpoint",
-    "container_dependency",
     "controller_dependency",
+    "inject",
     "resolve_container_service",
 ]
 
@@ -37,11 +37,11 @@ async def _provide_request_context() -> AsyncIterator[ResolutionContext]:
 _REQUEST_CONTEXT_DEPENDENCY = Depends(_provide_request_context)
 
 
-def container_dependency(
+def inject(
     runtime: ContainerRuntime,
     token: ServiceToken,
 ) -> Callable[..., object]:
-    """Build a FastAPI dependency that resolves one service per request."""
+    """Build a FastAPI dependency that injects one provider per request."""
 
     async def resolve(context: ResolutionContext = _REQUEST_CONTEXT_DEPENDENCY) -> object:
         return await resolve_container_service(runtime, token, context)

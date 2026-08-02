@@ -1,9 +1,10 @@
-"""Immutable metadata registry used during application assembly."""
+"""Immutable application assembly registry."""
 
 from collections.abc import Iterable
 
 from attrs import evolve, field, frozen
 
+from ..core.dependency import ProviderRegistry, Scope, ServiceFactory, ServiceToken
 from ..core.errors import RegistrationError
 from ..core.metadata import (
     ControllerMetadata,
@@ -14,53 +15,86 @@ from ..core.metadata import (
 )
 
 
-def _validate_snapshot(_instance: object, _attribute: object, snapshot: object) -> None:
-    if not isinstance(snapshot, MetadataSnapshot):
-        raise RegistrationError("registry snapshot must be a MetadataSnapshot instance")
+def _validate_metadata(_instance: object, _attribute: object, value: object) -> None:
+    if not isinstance(value, MetadataSnapshot):
+        raise RegistrationError("application metadata must be a MetadataSnapshot instance")
+
+
+def _validate_providers(_instance: object, _attribute: object, value: object) -> None:
+    if not isinstance(value, ProviderRegistry):
+        raise RegistrationError("application providers must be a ProviderRegistry instance")
 
 
 def _normalize_controllers(
     controllers: Iterable[ControllerMetadata],
 ) -> tuple[ControllerMetadata, ...]:
     try:
-        return tuple(controllers)
+        normalized = tuple(controllers)
     except TypeError as error:
         raise RegistrationError("controllers must be iterable") from error
+    if not all(isinstance(controller, ControllerMetadata) for controller in normalized):
+        raise RegistrationError("controllers must be ControllerMetadata instances")
+    return normalized
 
 
 @frozen(slots=True, kw_only=True)
-class MetadataRegistry:
-    """Persistent registry whose writes return a new registry instance."""
+class ApplicationRegistry:
+    """Immutable application composition for routes and dependency providers.
 
-    snapshot: MetadataSnapshot = field(
+    This is the high-level assembly API.  Metadata and provider declarations stay
+    separate internally, while application code can compose both from one value.
+    """
+
+    metadata: MetadataSnapshot = field(
         factory=MetadataSnapshot,
-        validator=_validate_snapshot,
+        validator=_validate_metadata,
+    )
+    providers: ProviderRegistry = field(
+        factory=ProviderRegistry,
+        validator=_validate_providers,
     )
 
-    def register(self, controller: ControllerMetadata) -> "MetadataRegistry":
-        """Return a registry containing one additional controller."""
-        if not isinstance(controller, ControllerMetadata):
-            raise RegistrationError("controller must be a ControllerMetadata instance")
-        return evolve(self, snapshot=self.snapshot.register(controller))
-
-    def register_controller(self, controller: type[object]) -> "MetadataRegistry":
-        """Return a registry containing a decorated controller class."""
-        return self.register(get_controller_metadata(controller))
-
-    def register_many(
+    def controller(
         self,
-        controllers: Iterable[ControllerMetadata],
-    ) -> "MetadataRegistry":
-        """Return a registry containing all controllers in order."""
-        registry = self
-        for controller in _normalize_controllers(controllers):
-            registry = registry.register(controller)
-        return registry
+        controller: ControllerMetadata | type[object],
+    ) -> "ApplicationRegistry":
+        """Return a new registry containing one decorated controller."""
+        metadata = (
+            controller
+            if isinstance(controller, ControllerMetadata)
+            else get_controller_metadata(controller)
+        )
+        return evolve(self, metadata=self.metadata.register(metadata))
 
-    def register_module(
+    def module(
         self,
         module: ModuleMetadata | type[object],
-    ) -> "MetadataRegistry":
-        """Return a registry containing a module's flattened controllers."""
+    ) -> "ApplicationRegistry":
+        """Return a new registry containing a module's flattened controllers."""
         metadata = module if isinstance(module, ModuleMetadata) else get_module_metadata(module)
-        return self.register_many(metadata.flatten_controllers())
+        registry = self
+        for controller in _normalize_controllers(metadata.flatten_controllers()):
+            registry = registry.controller(controller)
+        return registry
+
+    def provide(
+        self,
+        token: ServiceToken,
+        factory: ServiceFactory | None = None,
+        *,
+        scope: str | Scope = Scope.TRANSIENT,
+        lazy: bool = True,
+    ) -> "ApplicationRegistry":
+        """Return a new registry containing one dependency provider."""
+        return evolve(
+            self,
+            providers=self.providers.provide(
+                token,
+                factory,
+                scope=scope,
+                lazy=lazy,
+            ),
+        )
+
+
+__all__ = ["ApplicationRegistry"]
