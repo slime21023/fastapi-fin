@@ -1,19 +1,89 @@
 [project]
 name = "fastapi-fin"
 version = "0.1.0"
-description = "Add your description here"
+description = "Enterprise architecture extensions for FastAPI."
 readme = "README.md"
-authors = [
-    { name = "kevinchueh", email = "slime21023@gmail.com" }
-]
 requires-python = ">=3.12"
 dependencies = [
+    "attrs>=25.4,<27",
     "fastapi>=0.115.11",
-    "itsdangerous>=2.2.0",
-    "pwdlib[bcrypt]>=0.2.1",
-    "pyjwt[crypto]>=2.10.1",
+]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.7",
+    "httpx>=0.28.1",
+    "hypothesis>=6.100",
+    "pre-commit>=4.0",
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "pip-audit>=2.7",
+    "ruff>=0.11",
+    "ty>=0.0.1",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["fastapi_fin", "tests"]
+extend-exclude = ["build", "dist", ".venv", ".agents"]
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = 80
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "B", "UP", "SIM", "RUF", "N", "C4", "PT",
+    "TCH", "RET", "PLC", "PLE", "PLW", "S", "ASYNC", "PIE", "ERA", "PTH", "T20",
+]
+ignore = [
+    "E501",
+    "S101",
+    "PLW0603",
+    "RET504",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S", "PLR2004", "T20"]
+"scripts/**/*.py" = ["T20"]
+"examples/**/*.py" = ["T20"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fastapi_fin"]
+force-sort-within-sections = true
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ty.environment]
+python-version = "3.12"
+python = "./.venv"
+
+[tool.ty.src]
+include = ["fastapi_fin", "tests", "examples"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-config",
+    "--strict-markers",
+]
+xfail_strict = true
+filterwarnings = ["error"]
+markers = [
+    "slow: marks tests that are slow to run (deselect with '-m not slow')",
+    "integration: marks tests requiring external services or a running application",
+]

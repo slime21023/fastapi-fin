@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.12"
+            fastapi: "0.115.11"
+            starlette: "0.46.2"
+          - python: "3.12"
+            fastapi: "0.141.1"
+            starlette: "1.3.1"
+          - python: "3.13"
+            fastapi: "0.115.11"
+            starlette: "0.46.2"
+          - python: "3.13"
+            fastapi: "0.141.1"
+            starlette: "1.3.1"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install ${{ matrix.python }}
+
+      - name: Sync locked environment
+        run: uv sync --locked
+
+      - name: Install compatibility FastAPI and Starlette versions
+        run: uv pip install --python .venv "fastapi==${{ matrix.fastapi }}" "starlette==${{ matrix.starlette }}"
+
+      - name: Check formatting
+        run: uv run --no-sync ruff format --check .
+
+      - name: Lint
+        run: uv run --no-sync ruff check .
+
+      - name: Type check
+        run: uv run --no-sync ty check
+
+      - name: Static security scan
+        run: uv run --no-sync bandit -q -r fastapi_fin
+
+      - name: Dependency audit
+        run: |
+          trap 'rm -f audit-requirements.txt' EXIT
+          uv export --locked --format requirements.txt --all-groups --no-emit-project --output-file audit-requirements.txt
+          uv run --no-sync pip-audit --strict -r audit-requirements.txt
+
+      - name: Test
+        run: uv run --no-sync pytest --cov=fastapi_fin --cov-report=term-missing --cov-fail-under=85
+
+      - name: Run examples
+        run: |
+          uv run --no-sync python examples/01_minimal_routes.py
+          uv run --no-sync python examples/02_dependency_injection.py
+          uv run --no-sync python examples/03_guard_and_interceptor.py
+          uv run --no-sync python examples/04_lifecycle_events.py
+
+      - name: Build package
+        run: uv build

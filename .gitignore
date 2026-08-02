@@ -4,7 +4,21 @@ __pycache__/
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
 
-# Virtual environments
-.venv
+# Virtual environments and local tool state
+.venv/
+.uv/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+coverage.xml
+.mypy_cache/
+.pyright/
+.ty/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
