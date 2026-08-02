@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "fastapi-python": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "fastapi-python/SKILL.md",
+      "computedHash": "4521c6090735152b7b8df670cefe5c1c6d1dcaa115de67bb96e74ebf802d4f24"
+    },
+    "python-quality": {
+      "source": "claude-dev-suite/claude-dev-suite",
+      "sourceType": "github",
+      "skillPath": "skills/best-practices/python-quality/SKILL.md",
+      "computedHash": "c3b2154da2f93b9bbec6145d31b81008c9cc8ee7a9a52989390ea8fdc8b546c8"
+    },
+    "python-type-hints": {
+      "source": "josiahsiegel/claude-plugin-marketplace",
+      "sourceType": "github",
+      "skillPath": "plugins/python-master/skills/python-type-hints/SKILL.md",
+      "computedHash": "471d74c35e7468d1a67db44e10237736dd1c8c888983a1b8c3694dd1d6bb5a01"
+    },
+    "reviewing-python-libraries": {
+      "source": "wdm0006/python-skills",
+      "sourceType": "github",
+      "skillPath": "skills/python/library-review/SKILL.md",
+      "computedHash": "661e1354e299bc2ff2c73380750ffc8109ff5faf8e5f5cddb6fa84da120051cc"
+    }
+  }
+}
