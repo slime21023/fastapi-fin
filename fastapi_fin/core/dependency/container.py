@@ -1,0 +1,633 @@
+"""Framework-independent dependency binding and resolution."""
+
+import ast
+import asyncio
+from collections.abc import Callable
+from inspect import Parameter, Signature, isawaitable, iscoroutine, isfunction, ismethod, signature
+import sys
+from threading import RLock
+import typing
+from typing import Annotated, ForwardRef, Self, get_args, get_origin, get_type_hints
+
+from attrs import define, evolve, field, frozen, setters, validators
+
+from ..errors import DeclarationError, RegistrationError, ResolutionError
+from ..types import Lifecycle, _validate_nonnegative_integer
+
+ServiceToken = type[object] | str
+ServiceFactory = Callable[..., object]
+
+
+def _normalize_token(token: ServiceToken) -> ServiceToken:
+    if isinstance(token, type):
+        return token
+    if isinstance(token, str) and token.strip():
+        return token.strip()
+    raise DeclarationError("service token must be a type or non-empty string")
+
+
+def _validate_factory(factory: ServiceFactory) -> ServiceFactory:
+    if not callable(factory):
+        raise DeclarationError("service factory must be callable")
+    return factory
+
+
+def normalize_lifecycle(value: str | Lifecycle) -> Lifecycle:
+    """Normalize a lifecycle name at binding time."""
+    if isinstance(value, Lifecycle):
+        return value
+    try:
+        return Lifecycle(value.lower())
+    except (AttributeError, TypeError, ValueError) as error:
+        raise DeclarationError(f"unsupported dependency lifecycle: {value!r}") from error
+
+
+@frozen(slots=True, kw_only=True)
+class ServiceBinding:
+    """Immutable mapping from a service token to a factory."""
+
+    token: ServiceToken = field(converter=_normalize_token)
+    factory: ServiceFactory = field(converter=_validate_factory)
+    lifecycle: Lifecycle = field(converter=normalize_lifecycle)
+    lazy: bool = field(default=True, validator=validators.instance_of(bool))
+
+
+def _normalize_bindings(values: tuple[ServiceBinding, ...]) -> tuple[ServiceBinding, ...]:
+    normalized = tuple(values)
+    if not all(isinstance(binding, ServiceBinding) for binding in normalized):
+        raise DeclarationError("container bindings must be ServiceBinding instances")
+    return normalized
+
+
+@frozen(slots=True, kw_only=True)
+class ContainerSnapshot:
+    """Persistent collection of service bindings."""
+
+    bindings: tuple[ServiceBinding, ...] = field(
+        factory=tuple,
+        converter=_normalize_bindings,
+    )
+    version: int = field(default=0, validator=_validate_nonnegative_integer)
+
+    def bind(
+        self,
+        token: ServiceToken,
+        factory: ServiceFactory,
+        *,
+        lifecycle: str | Lifecycle = Lifecycle.TRANSIENT,
+        lazy: bool = True,
+    ) -> "ContainerSnapshot":
+        """Return a new snapshot with a previously unused binding."""
+        normalized_token = _normalize_token(token)
+        if self.find(normalized_token) is not None:
+            raise RegistrationError(f"service token is already bound: {normalized_token!r}")
+        binding = ServiceBinding(
+            token=normalized_token,
+            factory=factory,
+            lifecycle=lifecycle,
+            lazy=lazy,
+        )
+        return evolve(self, bindings=(*self.bindings, binding), version=self.version + 1)
+
+    def replace(
+        self,
+        token: ServiceToken,
+        factory: ServiceFactory,
+        *,
+        lifecycle: str | Lifecycle = Lifecycle.TRANSIENT,
+        lazy: bool = True,
+    ) -> "ContainerSnapshot":
+        """Return a new snapshot replacing one existing binding."""
+        normalized_token = _normalize_token(token)
+        if self.find(normalized_token) is None:
+            raise RegistrationError(
+                f"cannot replace an unbound service token: {normalized_token!r}"
+            )
+        replacement = ServiceBinding(
+            token=normalized_token,
+            factory=factory,
+            lifecycle=lifecycle,
+            lazy=lazy,
+        )
+        return evolve(
+            self,
+            bindings=tuple(
+                replacement if binding.token == normalized_token else binding
+                for binding in self.bindings
+            ),
+            version=self.version + 1,
+        )
+
+    def find(self, token: ServiceToken) -> ServiceBinding | None:
+        """Find a binding by token without resolving it."""
+        normalized_token = _normalize_token(token)
+        return next(
+            (binding for binding in self.bindings if binding.token == normalized_token),
+            None,
+        )
+
+
+@define(slots=True, kw_only=True)
+class ResolutionContext:
+    """Request-scoped values and cycle detection state."""
+
+    values: dict[ServiceToken, object] = field(factory=dict)
+    resolving: list[ServiceToken] = field(factory=list)
+    _owned_values: list[object] = field(factory=list, init=False, repr=False)
+    _closed: bool = field(default=False, init=False, repr=False)
+
+    @property
+    def closed(self) -> bool:
+        """Whether this context has already released its owned resources."""
+        return self._closed
+
+    def __enter__(self) -> Self:
+        """Enter a synchronous context that owns request/transient resources."""
+        if self._closed:
+            raise ResolutionError("resolution context is already closed")
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: object,
+    ) -> None:
+        """Close owned resources when leaving a synchronous context."""
+        self.close()
+
+    async def __aenter__(self) -> Self:
+        """Enter an asynchronous context that owns request/transient resources."""
+        if self._closed:
+            raise ResolutionError("resolution context is already closed")
+        return self
+
+    async def __aexit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: object,
+    ) -> None:
+        """Close owned resources when leaving an asynchronous context."""
+        await self.close_async()
+
+    def track(self, value: object) -> None:
+        """Track one request/transient value for eventual resource cleanup."""
+        if self._closed:
+            raise ResolutionError("resolution context is already closed")
+        if _has_disposer(value) and not any(item is value for item in self._owned_values):
+            self._owned_values.append(value)
+
+    def close(self) -> None:
+        """Release owned resources synchronously in reverse creation order."""
+        if self._closed:
+            return
+        values = tuple(self._owned_values)
+        _ensure_sync_cleanup(values, "resolution context")
+        self._closed = True
+        self._owned_values.clear()
+        self.values.clear()
+        self.resolving.clear()
+        _dispose_sync_values(values, "resolution context")
+
+    async def close_async(self) -> None:
+        """Release owned resources asynchronously in reverse creation order."""
+        if self._closed:
+            return
+        self._closed = True
+        values = tuple(self._owned_values)
+        self._owned_values.clear()
+        self.values.clear()
+        self.resolving.clear()
+        await _dispose_async_values(values, "resolution context")
+
+
+@define(slots=True, kw_only=True)
+class ContainerRuntime:
+    """Runtime cache for an immutable container snapshot."""
+
+    snapshot: ContainerSnapshot = field(on_setattr=setters.frozen)
+    singleton_values: dict[ServiceToken, object] = field(factory=dict)
+    _async_singleton_locks: dict[ServiceToken, asyncio.Lock] = field(
+        factory=dict,
+        init=False,
+        repr=False,
+    )
+    _sync_singleton_locks: dict[ServiceToken, RLock] = field(
+        factory=dict,
+        init=False,
+        repr=False,
+    )
+
+    def initialize(self) -> None:
+        """Eagerly initialize all non-lazy bindings synchronously."""
+        for binding in self.snapshot.bindings:
+            if not binding.lazy:
+                if binding.lifecycle is not Lifecycle.SINGLETON:
+                    raise ResolutionError("only singleton bindings can be eagerly initialized")
+                self.resolve(binding.token)
+
+    async def initialize_async(self) -> None:
+        """Eagerly initialize all non-lazy bindings, including async factories."""
+        for binding in self.snapshot.bindings:
+            if not binding.lazy:
+                if binding.lifecycle is not Lifecycle.SINGLETON:
+                    raise ResolutionError("only singleton bindings can be eagerly initialized")
+                await self.resolve_async(binding.token)
+
+    def close(self) -> None:
+        """Release singleton resources synchronously in reverse creation order."""
+        values = tuple(self.singleton_values.values())
+        _ensure_sync_cleanup(values, "container runtime")
+        self.singleton_values.clear()
+        self._sync_singleton_locks.clear()
+        _dispose_sync_values(values, "container runtime")
+
+    async def close_async(self) -> None:
+        """Release singleton resources asynchronously in reverse creation order."""
+        values = tuple(self.singleton_values.values())
+        self.singleton_values.clear()
+        self._async_singleton_locks.clear()
+        self._sync_singleton_locks.clear()
+        await _dispose_async_values(values, "container runtime")
+
+    def resolve(
+        self,
+        token: ServiceToken,
+        context: ResolutionContext | None = None,
+    ) -> object:
+        """Resolve a binding using singleton, request, or transient semantics."""
+        normalized_token = _normalize_token(token)
+        binding = self.snapshot.find(normalized_token)
+        if binding is None:
+            raise ResolutionError(f"no service binding found for token: {normalized_token!r}")
+
+        request_context = context or ResolutionContext()
+        if request_context.closed:
+            raise ResolutionError("resolution context is already closed")
+        if binding.lifecycle is Lifecycle.SINGLETON and normalized_token in self.singleton_values:
+            return self.singleton_values[normalized_token]
+        if binding.lifecycle is Lifecycle.REQUEST and normalized_token in request_context.values:
+            return request_context.values[normalized_token]
+        if binding.lifecycle is Lifecycle.SINGLETON:
+            if normalized_token in request_context.resolving:
+                raise _circular_dependency_error(normalized_token, request_context)
+            lock = self._sync_singleton_locks.setdefault(normalized_token, RLock())
+            with lock:
+                if normalized_token in self.singleton_values:
+                    return self.singleton_values[normalized_token]
+                return self._resolve_sync_uncached(
+                    binding,
+                    normalized_token,
+                    request_context,
+                )
+        return self._resolve_sync_uncached(binding, normalized_token, request_context)
+
+    def _resolve_sync_uncached(
+        self,
+        binding: ServiceBinding,
+        normalized_token: ServiceToken,
+        request_context: ResolutionContext,
+    ) -> object:
+        if normalized_token in request_context.resolving:
+            raise _circular_dependency_error(normalized_token, request_context)
+        self._validate_lifecycle_dependency(binding, request_context)
+
+        request_context.resolving.append(normalized_token)
+        try:
+            value = self._call_factory(binding.factory, request_context)
+        finally:
+            request_context.resolving.pop()
+
+        if binding.lifecycle is Lifecycle.SINGLETON:
+            self.singleton_values[normalized_token] = value
+        else:
+            request_context.track(value)
+            if binding.lifecycle is Lifecycle.REQUEST:
+                request_context.values[normalized_token] = value
+        return value
+
+    def _call_factory(
+        self,
+        factory: ServiceFactory,
+        context: ResolutionContext,
+    ) -> object:
+        parameters, annotations = _factory_parameters(factory)
+        dependencies = {
+            parameter.name: self.resolve(_parameter_token(parameter, annotations), context)
+            for parameter in parameters
+            if _requires_dependency(parameter, annotations)
+        }
+
+        try:
+            value = factory(**dependencies)
+            if isawaitable(value):
+                if iscoroutine(value):
+                    value.close()
+                raise ResolutionError(f"async service factory requires resolve_async: {factory!r}")
+            return value
+        except TypeError as error:
+            raise ResolutionError(f"failed to call service factory: {factory!r}") from error
+
+    async def resolve_async(
+        self,
+        token: ServiceToken,
+        context: ResolutionContext | None = None,
+    ) -> object:
+        """Resolve sync or async factories using the same lifecycle rules."""
+        normalized_token = _normalize_token(token)
+        binding = self.snapshot.find(normalized_token)
+        if binding is None:
+            raise ResolutionError(f"no service binding found for token: {normalized_token!r}")
+
+        request_context = context or ResolutionContext()
+        if request_context.closed:
+            raise ResolutionError("resolution context is already closed")
+
+        if binding.lifecycle is Lifecycle.SINGLETON:
+            if normalized_token in self.singleton_values:
+                return self.singleton_values[normalized_token]
+            if normalized_token in request_context.resolving:
+                raise _circular_dependency_error(normalized_token, request_context)
+            lock = self._async_singleton_locks.setdefault(
+                normalized_token,
+                asyncio.Lock(),
+            )
+            async with lock:
+                if normalized_token in self.singleton_values:
+                    return self.singleton_values[normalized_token]
+                return await self._resolve_async_uncached(
+                    binding,
+                    normalized_token,
+                    request_context,
+                )
+
+        return await self._resolve_async_uncached(binding, normalized_token, request_context)
+
+    async def _resolve_async_uncached(
+        self,
+        binding: ServiceBinding,
+        normalized_token: ServiceToken,
+        request_context: ResolutionContext,
+    ) -> object:
+        if binding.lifecycle is Lifecycle.REQUEST and normalized_token in request_context.values:
+            return request_context.values[normalized_token]
+        if normalized_token in request_context.resolving:
+            raise _circular_dependency_error(normalized_token, request_context)
+        self._validate_lifecycle_dependency(binding, request_context)
+
+        request_context.resolving.append(normalized_token)
+        try:
+            value = await self._call_factory_async(binding.factory, request_context)
+        finally:
+            request_context.resolving.pop()
+
+        if binding.lifecycle is Lifecycle.SINGLETON:
+            self.singleton_values[normalized_token] = value
+        else:
+            request_context.track(value)
+            if binding.lifecycle is Lifecycle.REQUEST:
+                request_context.values[normalized_token] = value
+        return value
+
+    async def _call_factory_async(
+        self,
+        factory: ServiceFactory,
+        context: ResolutionContext,
+    ) -> object:
+        parameters, annotations = _factory_parameters(factory)
+        dependencies = {
+            parameter.name: await self.resolve_async(
+                _parameter_token(parameter, annotations), context
+            )
+            for parameter in parameters
+            if _requires_dependency(parameter, annotations)
+        }
+
+        try:
+            value = factory(**dependencies)
+            return await value if isawaitable(value) else value
+        except TypeError as error:
+            raise ResolutionError(f"failed to call service factory: {factory!r}") from error
+
+    def _validate_lifecycle_dependency(
+        self,
+        binding: ServiceBinding,
+        context: ResolutionContext,
+    ) -> None:
+        if binding.lifecycle is not Lifecycle.REQUEST:
+            return
+        for parent_token in context.resolving:
+            parent_binding = self.snapshot.find(parent_token)
+            if parent_binding is not None and parent_binding.lifecycle is Lifecycle.SINGLETON:
+                raise ResolutionError(
+                    "singleton services cannot depend on request-scoped services: "
+                    f"{parent_token!r} -> {binding.token!r}"
+                )
+
+
+def _factory_parameters(
+    factory: ServiceFactory,
+) -> tuple[tuple[Parameter, ...], dict[str, object]]:
+    try:
+        parameters = tuple(signature(factory).parameters.values())
+    except (TypeError, ValueError) as error:
+        raise ResolutionError(f"cannot inspect service factory: {factory!r}") from error
+
+    annotation_source: object = factory
+    if isinstance(factory, type):
+        annotation_source = factory.__init__
+    elif not (isfunction(factory) or ismethod(factory)):
+        annotation_source = factory.__call__
+
+    try:
+        annotations = get_type_hints(annotation_source, include_extras=True)
+    except (NameError, TypeError) as error:
+        raw_annotations = getattr(annotation_source, "__annotations__", None)
+        if not isinstance(raw_annotations, dict):
+            raise ResolutionError(
+                f"cannot resolve service factory annotations: {factory!r}"
+            ) from error
+        annotations = {
+            name: _normalize_raw_annotation(annotation, annotation_source)
+            for name, annotation in raw_annotations.items()
+        }
+    return parameters, annotations
+
+
+def _requires_dependency(parameter: Parameter, annotations: dict[str, object]) -> bool:
+    if parameter.kind in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
+        return False
+    if parameter.kind is Parameter.POSITIONAL_ONLY:
+        raise ResolutionError(
+            f"positional-only service dependencies are unsupported: {parameter.name!r}"
+        )
+    if parameter.name not in annotations and parameter.annotation is Signature.empty:
+        if parameter.default is not Signature.empty:
+            return False
+        raise ResolutionError(
+            f"service factory parameter lacks a token annotation: {parameter.name!r}"
+        )
+    return True
+
+
+def _parameter_token(parameter: Parameter, annotations: dict[str, object]) -> ServiceToken:
+    token = _unwrap_annotated(annotations.get(parameter.name, parameter.annotation))
+    if not isinstance(token, (str, type)):
+        raise ResolutionError(f"service dependency annotation is not a token: {parameter.name!r}")
+    return token
+
+
+def _unwrap_annotated(annotation: object) -> object:
+    while get_origin(annotation) is Annotated:
+        arguments = get_args(annotation)
+        if not arguments:
+            break
+        annotation = arguments[0]
+    if isinstance(annotation, ForwardRef):
+        return annotation.__forward_arg__
+    return annotation
+
+
+def _normalize_raw_annotation(annotation: object, annotation_source: object) -> object:
+    if isinstance(annotation, str):
+        normalized = annotation.strip()
+        if len(normalized) >= 2 and normalized[0] == normalized[-1] == '"':
+            return normalized[1:-1]
+        if len(normalized) >= 2 and normalized[0] == normalized[-1] == "'":
+            return normalized[1:-1]
+        if _is_annotated_expression(normalized):
+            return _extract_annotated_token(normalized, annotation_source)
+        return normalized
+    return annotation
+
+
+def _is_annotated_expression(annotation: str) -> bool:
+    try:
+        expression = ast.parse(annotation, mode="eval").body
+    except SyntaxError:
+        return False
+    if not isinstance(expression, ast.Subscript):
+        return False
+    return (isinstance(expression.value, ast.Name) and expression.value.id == "Annotated") or (
+        isinstance(expression.value, ast.Attribute) and expression.value.attr == "Annotated"
+    )
+
+
+def _extract_annotated_token(annotation: str, annotation_source: object) -> object:
+    try:
+        expression = ast.parse(annotation, mode="eval").body
+    except SyntaxError:
+        return annotation
+    if not isinstance(expression, ast.Subscript):
+        return annotation
+
+    arguments = (
+        expression.slice.elts if isinstance(expression.slice, ast.Tuple) else (expression.slice,)
+    )
+    if not arguments:
+        return annotation
+    first_argument = arguments[0]
+    if isinstance(first_argument, ast.Constant) and isinstance(first_argument.value, str):
+        return first_argument.value
+    if isinstance(first_argument, ast.Name):
+        candidate = _annotation_namespace(annotation_source).get(first_argument.id)
+        if isinstance(candidate, (str, type)):
+            return candidate
+    return annotation
+
+
+def _annotation_namespace(annotation_source: object) -> dict[str, object]:
+    namespace = dict(getattr(annotation_source, "__globals__", {}))
+    module_name = getattr(annotation_source, "__module__", None)
+    module = sys.modules.get(module_name) if isinstance(module_name, str) else None
+    if module is not None:
+        namespace.update(vars(module))
+    namespace.update(vars(typing))
+    namespace["Annotated"] = Annotated
+    return namespace
+
+
+def _circular_dependency_error(
+    token: ServiceToken,
+    context: ResolutionContext,
+) -> ResolutionError:
+    cycle = " -> ".join(map(str, (*context.resolving, token)))
+    return ResolutionError(f"circular dependency detected: {cycle}")
+
+
+def _has_disposer(value: object) -> bool:
+    return any(
+        callable(getattr(value, name, None))
+        for name in ("aclose", "__aexit__", "close", "__exit__")
+    )
+
+
+def _ensure_sync_cleanup(values: tuple[object, ...], scope: str) -> None:
+    if any(
+        callable(getattr(value, name, None)) for value in values for name in ("aclose", "__aexit__")
+    ):
+        raise ResolutionError(f"async resource cleanup requires close_async: {scope}")
+
+
+def _dispose_sync(value: object) -> None:
+    if callable(getattr(value, "aclose", None)) or callable(getattr(value, "__aexit__", None)):
+        raise ResolutionError("async resource cleanup requires close_async")
+
+    for name in ("close", "__exit__"):
+        disposer = getattr(value, name, None)
+        if not callable(disposer):
+            continue
+        result = disposer() if name == "close" else disposer(None, None, None)
+        if isawaitable(result):
+            if iscoroutine(result):
+                result.close()
+            raise ResolutionError("async resource cleanup requires close_async")
+        return
+
+
+async def _dispose_async(value: object) -> None:
+    for name in ("aclose", "__aexit__", "close", "__exit__"):
+        disposer = getattr(value, name, None)
+        if not callable(disposer):
+            continue
+        result = disposer() if name in {"aclose", "close"} else disposer(None, None, None)
+        if isawaitable(result):
+            await result
+        return
+
+
+def _dispose_sync_values(values: tuple[object, ...], scope: str) -> None:
+    errors: list[Exception] = []
+    disposed: set[int] = set()
+    for value in reversed(values):
+        if id(value) in disposed or not _has_disposer(value):
+            continue
+        disposed.add(id(value))
+        try:
+            _dispose_sync(value)
+        except Exception as error:
+            errors.append(error)
+    _raise_cleanup_errors(errors, scope)
+
+
+async def _dispose_async_values(values: tuple[object, ...], scope: str) -> None:
+    errors: list[Exception] = []
+    disposed: set[int] = set()
+    for value in reversed(values):
+        if id(value) in disposed or not _has_disposer(value):
+            continue
+        disposed.add(id(value))
+        try:
+            await _dispose_async(value)
+        except Exception as error:
+            errors.append(error)
+    _raise_cleanup_errors(errors, scope)
+
+
+def _raise_cleanup_errors(errors: list[Exception], scope: str) -> None:
+    if not errors:
+        return
+    if len(errors) == 1:
+        raise errors[0]
+    raise ExceptionGroup(f"multiple errors while closing {scope}", errors)
