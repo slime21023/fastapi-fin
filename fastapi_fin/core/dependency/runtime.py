@@ -2,6 +2,7 @@
 
 import ast
 import asyncio
+from concurrent.futures import Future
 from inspect import Parameter, Signature, isawaitable, iscoroutine, isfunction, ismethod, signature
 import sys
 from threading import RLock
@@ -10,7 +11,7 @@ from typing import Annotated, ForwardRef, Self, get_args, get_origin, get_type_h
 
 from attrs import define, field, setters
 
-from ..errors import ResolutionError
+from ..errors import ResolutionError, RuntimeClosedError
 from ..types import Scope
 from .providers import Provider, ProviderRegistry, ServiceFactory, ServiceToken, _normalize_token
 
@@ -96,16 +97,20 @@ class ContainerRuntime:
 
     providers: ProviderRegistry = field(on_setattr=setters.frozen)
     singleton_values: dict[ServiceToken, object] = field(factory=dict)
-    _async_singleton_locks: dict[ServiceToken, asyncio.Lock] = field(
+    # A concurrent Future is shared by sync threads and async event loops.
+    # asyncio.Lock cannot coordinate those two execution domains.
+    _singleton_states: dict[ServiceToken, Future[object]] = field(
         factory=dict,
         init=False,
         repr=False,
     )
-    _sync_singleton_locks: dict[ServiceToken, RLock] = field(
-        factory=dict,
-        init=False,
-        repr=False,
-    )
+    _singleton_state_lock: RLock = field(factory=RLock, init=False, repr=False)
+    _closed: bool = field(default=False, init=False, repr=False)
+
+    @property
+    def closed(self) -> bool:
+        """Whether this runtime has released its application resources."""
+        return self._closed
 
     def initialize(self) -> None:
         """Eagerly initialize all non-lazy providers synchronously."""
@@ -125,18 +130,33 @@ class ContainerRuntime:
 
     def close(self) -> None:
         """Release singleton resources synchronously in reverse creation order."""
+        if self._closed:
+            return
         values = tuple(self.singleton_values.values())
         _ensure_sync_cleanup(values, "container runtime")
-        self.singleton_values.clear()
-        self._sync_singleton_locks.clear()
+        with self._singleton_state_lock:
+            if self._closed:
+                return
+            self._closed = True
+            self.singleton_values.clear()
+            pending = tuple(self._singleton_states.values())
+            self._singleton_states.clear()
+        self._fail_pending_singletons(pending)
         _dispose_sync_values(values, "container runtime")
 
     async def close_async(self) -> None:
         """Release singleton resources asynchronously in reverse creation order."""
+        if self._closed:
+            return
         values = tuple(self.singleton_values.values())
-        self.singleton_values.clear()
-        self._async_singleton_locks.clear()
-        self._sync_singleton_locks.clear()
+        with self._singleton_state_lock:
+            if self._closed:
+                return
+            self._closed = True
+            self.singleton_values.clear()
+            pending = tuple(self._singleton_states.values())
+            self._singleton_states.clear()
+        self._fail_pending_singletons(pending)
         await _dispose_async_values(values, "container runtime")
 
     def resolve(
@@ -145,6 +165,7 @@ class ContainerRuntime:
         context: ResolutionContext | None = None,
     ) -> object:
         """Resolve a provider using singleton, request, or transient semantics."""
+        self._ensure_open()
         normalized_token = _normalize_token(token)
         provider = self.providers.find(normalized_token)
         if provider is None:
@@ -160,15 +181,22 @@ class ContainerRuntime:
         if provider.scope is Scope.SINGLETON:
             if normalized_token in request_context.resolving:
                 raise _circular_dependency_error(normalized_token, request_context)
-            lock = self._sync_singleton_locks.setdefault(normalized_token, RLock())
-            with lock:
-                if normalized_token in self.singleton_values:
-                    return self.singleton_values[normalized_token]
-                return self._resolve_sync_uncached(
+            cached, state, owner = self._claim_singleton(normalized_token)
+            if state is None:
+                return cached
+            if not owner:
+                return self._wait_for_singleton_sync(state)
+            try:
+                value = self._resolve_sync_uncached(
                     provider,
                     normalized_token,
                     request_context,
                 )
+            except BaseException as error:
+                self._fail_singleton(normalized_token, state, error)
+                raise
+            self._publish_singleton(normalized_token, state, value)
+            return value
         return self._resolve_sync_uncached(provider, normalized_token, request_context)
 
     def _resolve_sync_uncached(
@@ -187,9 +215,7 @@ class ContainerRuntime:
         finally:
             request_context.resolving.pop()
 
-        if provider.scope is Scope.SINGLETON:
-            self.singleton_values[normalized_token] = value
-        else:
+        if provider.scope is not Scope.SINGLETON:
             request_context.track(value)
             if provider.scope is Scope.REQUEST:
                 request_context.values[normalized_token] = value
@@ -223,6 +249,7 @@ class ContainerRuntime:
         context: ResolutionContext | None = None,
     ) -> object:
         """Resolve sync or async factories using the same lifecycle rules."""
+        self._ensure_open()
         normalized_token = _normalize_token(token)
         provider = self.providers.find(normalized_token)
         if provider is None:
@@ -233,22 +260,24 @@ class ContainerRuntime:
             raise ResolutionError("resolution context is already closed")
 
         if provider.scope is Scope.SINGLETON:
-            if normalized_token in self.singleton_values:
-                return self.singleton_values[normalized_token]
             if normalized_token in request_context.resolving:
                 raise _circular_dependency_error(normalized_token, request_context)
-            lock = self._async_singleton_locks.setdefault(
-                normalized_token,
-                asyncio.Lock(),
-            )
-            async with lock:
-                if normalized_token in self.singleton_values:
-                    return self.singleton_values[normalized_token]
-                return await self._resolve_async_uncached(
+            cached, state, owner = self._claim_singleton(normalized_token)
+            if state is None:
+                return cached
+            if not owner:
+                return await asyncio.wrap_future(state)
+            try:
+                value = await self._resolve_async_uncached(
                     provider,
                     normalized_token,
                     request_context,
                 )
+            except BaseException as error:
+                self._fail_singleton(normalized_token, state, error)
+                raise
+            self._publish_singleton(normalized_token, state, value)
+            return value
 
         return await self._resolve_async_uncached(provider, normalized_token, request_context)
 
@@ -270,9 +299,7 @@ class ContainerRuntime:
         finally:
             request_context.resolving.pop()
 
-        if provider.scope is Scope.SINGLETON:
-            self.singleton_values[normalized_token] = value
-        else:
+        if provider.scope is not Scope.SINGLETON:
             request_context.track(value)
             if provider.scope is Scope.REQUEST:
                 request_context.values[normalized_token] = value
@@ -312,6 +339,81 @@ class ContainerRuntime:
                     "singleton services cannot depend on request-scoped services: "
                     f"{parent_token!r} -> {provider.token!r}"
                 )
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeClosedError("container runtime is already closed")
+
+    def _claim_singleton(
+        self,
+        token: ServiceToken,
+    ) -> tuple[object, Future[object] | None, bool]:
+        with self._singleton_state_lock:
+            self._ensure_open()
+            if token in self.singleton_values:
+                return self.singleton_values[token], None, False
+            state = self._singleton_states.get(token)
+            if state is not None:
+                return None, state, False
+            state = Future()
+            self._singleton_states[token] = state
+            return None, state, True
+
+    def _publish_singleton(
+        self,
+        token: ServiceToken,
+        state: Future[object],
+        value: object,
+    ) -> None:
+        with self._singleton_state_lock:
+            if self._closed:
+                error = RuntimeClosedError("container runtime is already closed")
+                self._fail_singleton_locked(token, state, error)
+                raise error
+            self.singleton_values[token] = value
+            self._singleton_states.pop(token, None)
+            state.set_result(value)
+
+    def _fail_singleton(
+        self,
+        token: ServiceToken,
+        state: Future[object],
+        error: BaseException,
+    ) -> None:
+        with self._singleton_state_lock:
+            self._fail_singleton_locked(token, state, error)
+
+    def _fail_singleton_locked(
+        self,
+        token: ServiceToken,
+        state: Future[object],
+        error: BaseException,
+    ) -> None:
+        self._singleton_states.pop(token, None)
+        if not state.done():
+            state.set_exception(error)
+            state.exception()
+
+    def _fail_pending_singletons(self, states: tuple[Future[object], ...]) -> None:
+        error = RuntimeClosedError("container runtime is already closed")
+        for state in states:
+            if not state.done():
+                state.set_exception(error)
+                state.exception()
+
+    @staticmethod
+    def _wait_for_singleton_sync(state: Future[object]) -> object:
+        if not state.done():
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
+                raise ResolutionError(
+                    "synchronous resolution cannot wait for an async singleton "
+                    "inside a running event loop"
+                )
+        return state.result()
 
 
 def _factory_parameters(

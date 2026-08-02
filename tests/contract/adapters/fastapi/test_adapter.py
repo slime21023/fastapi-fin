@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 import pytest
 
-from fastapi_fin import AdapterError, CachePolicy, guard, use_interceptor
+from fastapi_fin import AdapterError, CachePolicy, dependency, guard, use_interceptor
 from fastapi_fin.adapters import FastAPIAdapter
 from fastapi_fin.application import ApplicationRegistry, controller, get, put
 from fastapi_fin.core import (
@@ -66,12 +66,12 @@ def test_adapter_creates_public_fastapi_route_and_preserves_openapi() -> None:
 
     with TestClient(app) as client:
         response = client.get("/users/42")
+        invalid = client.get("/users/not-an-int")
 
     assert response.status_code == 200
     assert response.json() == {"user_id": 42}
     assert "/users/{user_id}" in app.openapi()["paths"]
 
-    invalid = client.get("/users/not-an-int")
     assert invalid.status_code == 422
 
 
@@ -210,12 +210,7 @@ class Service:
     value = "from-container"
 
 
-service_registry = ApplicationRegistry().provide(Service)
-service_dependency = FastAPIAdapter(
-    FastAPI(),
-    registry=service_registry,
-).inject(Service)
-service_dependency_marker = Depends(service_dependency)
+service_dependency_marker = Depends(dependency(Service))
 
 
 @controller(prefix="/protected")
@@ -342,7 +337,11 @@ def test_adapter_applies_global_guard_to_every_route() -> None:
 
 
 def test_adapter_injects_provider_dependency() -> None:
-    registry = ApplicationRegistry().controller(get_controller_metadata(ServiceController))
+    registry = (
+        ApplicationRegistry()
+        .controller(get_controller_metadata(ServiceController))
+        .provide(Service)
+    )
     app = FastAPIAdapter.create_app(registry)
 
     with TestClient(app) as client:
@@ -352,14 +351,35 @@ def test_adapter_injects_provider_dependency() -> None:
     assert response.json() == {"value": "from-container"}
 
 
+def test_adapter_dependency_uses_one_app_runtime_for_singletons() -> None:
+    factory_calls = 0
+
+    def build_service() -> Service:
+        nonlocal factory_calls
+        factory_calls += 1
+        return Service()
+
+    registry = (
+        ApplicationRegistry()
+        .controller(get_controller_metadata(ServiceController))
+        .provide(Service, build_service, scope=Scope.SINGLETON)
+    )
+    app = FastAPIAdapter.create_app(registry)
+
+    with TestClient(app) as client:
+        first = client.get("/services/")
+        second = client.get("/services/")
+
+    assert first.json() == {"value": "from-container"}
+    assert second.json() == {"value": "from-container"}
+    assert factory_calls == 1
+
+
 def test_adapter_translates_resolution_errors_without_leaking_container_details() -> None:
     class MissingService:
         pass
 
-    dependency_registry = ApplicationRegistry().provide("present", object)
-    missing_dependency = Depends(
-        FastAPIAdapter(FastAPI(), registry=dependency_registry).inject(MissingService)
-    )
+    missing_dependency = Depends(dependency(MissingService))
 
     @controller(prefix="/missing-service")
     class MissingServiceController:
@@ -387,6 +407,32 @@ def test_adapter_uses_default_controller_resolution_without_explicit_provider() 
 
     assert response.status_code == 200
     assert response.json() == {"user_id": 42}
+
+
+def test_adapter_keeps_default_controllers_request_scoped() -> None:
+    instances = 0
+
+    @controller(prefix="/default-request-scoped")
+    class DefaultRequestScopedController:
+        def __init__(self) -> None:
+            nonlocal instances
+            instances += 1
+            self.instance = instances
+
+        @get("/")
+        def value(self) -> dict[str, int]:
+            return {"instance": self.instance}
+
+    registry = ApplicationRegistry().controller(DefaultRequestScopedController)
+    app = FastAPIAdapter.create_app(registry)
+
+    with TestClient(app) as client:
+        first = client.get("/default-request-scoped/")
+        second = client.get("/default-request-scoped/")
+
+    assert first.json() == {"instance": 1}
+    assert second.json() == {"instance": 2}
+    assert instances == 2
 
 
 def test_adapter_keeps_instances_separate_for_repeated_controller_metadata() -> None:
@@ -500,13 +546,7 @@ def test_adapter_closes_request_resources_after_each_request() -> None:
     def build_resource() -> RequestResource:
         return RequestResource()
 
-    dependency_registry = ApplicationRegistry().provide(
-        RequestResource,
-        build_resource,
-        scope=Scope.REQUEST,
-    )
-    dependency_adapter = FastAPIAdapter(FastAPI(), registry=dependency_registry)
-    resource_dependency = Depends(dependency_adapter.inject(RequestResource))
+    resource_dependency = Depends(dependency(RequestResource))
 
     @controller(prefix="/request-cleanup")
     class RequestCleanupController:

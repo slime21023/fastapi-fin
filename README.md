@@ -44,7 +44,7 @@ FastAPI 仍然是 application 的主要入口；FastAPI-Fin 只透過 Adapter �
 `CompiledApplication`；FastAPI Adapter 內部也使用此 compiler，再將結果掛載為
 `APIRouter`。
 
-`FastAPIAdapter` 可從 `fastapi_fin.adapters` 匯入，也會由 root package lazy export。Controller 支援所有 `HttpMethod` convenience decorators，例如 `get`、`post`、`put`、`patch` 與 `delete`；多 method route 可使用 `route(..., methods=[...])`。
+`FastAPIAdapter` 與 `dependency()` 可從 `fastapi_fin.adapters` 匯入，也會由 root package lazy export。Controller 支援所有 `HttpMethod` convenience decorators，例如 `get`、`post`、`put`、`patch` 與 `delete`；多 method route 可使用 `route(..., methods=[...])`。
 若需要讀取 decorator 產生的 immutable route metadata，可使用 root export 的
 `get_route_metadata()`。
 
@@ -114,7 +114,7 @@ normalizer 支援同步與非同步 callable，`publish_async()` 會等待非同
 - 只有 `fastapi_fin.adapters` 呼叫 FastAPI 公開 API。
 - Adapter 邊界依責任拆分為 `app.py`（組裝）、`router.py`（路由轉譯）、
   `dependencies.py`（DI 轉譯）、`lifespan.py`（生命週期轉譯）與 `errors.py`（邊界錯誤）。
-- root package 只在實際存取 `FastAPIAdapter` 或 `inject` 時載入 FastAPI。
+- root package 只在實際存取 `FastAPIAdapter` 或 `dependency` 時載入 FastAPI。
 - provider、metadata、policy、subscription 與 config 都以 immutable `attrs` snapshot 表達。
 - Adapter contract tests 驗證 FastAPI routing、Depends、lifespan、OpenAPI 與版本相容性。
 - Adapter 建構參數與 lifespan handler 會在 boundary 即時驗證，避免錯誤延後到 application startup。

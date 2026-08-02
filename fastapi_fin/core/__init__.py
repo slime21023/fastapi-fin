@@ -14,6 +14,7 @@ from .errors import (
     FastAPIFinError,
     RegistrationError,
     ResolutionError,
+    RuntimeClosedError,
 )
 from .events import (
     ApplicationStarted,
@@ -64,6 +65,7 @@ __all__ = [
     "ResolutionContext",
     "ResolutionError",
     "RouteMetadata",
+    "RuntimeClosedError",
     "Scope",
     "SettingSpec",
     "Subscription",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from time import sleep
 from typing import Annotated
 
@@ -206,6 +207,35 @@ def test_container_deduplicates_concurrent_sync_singleton_resolution() -> None:
         values = list(executor.map(runtime.resolve, ("database",) * 32))
 
     assert all(value is values[0] for value in values)
+    assert calls == 1
+
+
+def test_container_deduplicates_sync_and_async_singleton_resolution() -> None:
+    calls = 0
+    started = Event()
+
+    def build_database() -> FutureDatabase:
+        nonlocal calls
+        calls += 1
+        started.set()
+        sleep(0.05)
+        return FutureDatabase()
+
+    runtime = ContainerRuntime(
+        providers=ProviderRegistry().provide(
+            "database",
+            build_database,
+            scope=Scope.SINGLETON,
+        ),
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        sync_future = executor.submit(runtime.resolve, "database")
+        assert started.wait(timeout=1)
+        async_value = asyncio.run(runtime.resolve_async("database"))
+        sync_value = sync_future.result()
+
+    assert async_value is sync_value
     assert calls == 1
 
 

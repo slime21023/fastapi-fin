@@ -4,10 +4,12 @@ import pytest
 
 from fastapi_fin.core import (
     ContainerRuntime,
+    Provider,
     ProviderRegistry,
     RegistrationError,
     ResolutionContext,
     ResolutionError,
+    RuntimeClosedError,
     Scope,
 )
 
@@ -71,6 +73,13 @@ def test_provider_registry_is_immutable_and_rejects_duplicate_providers() -> Non
     assert len(updated.providers) == 1
     with pytest.raises(RegistrationError):
         updated.provide("database", Database)
+
+
+def test_provider_registry_rejects_duplicate_tokens_in_direct_construction() -> None:
+    provider = Provider(token="database", factory=Database, scope=Scope.TRANSIENT)
+
+    with pytest.raises(RegistrationError, match="already provided"):
+        ProviderRegistry(providers=(provider, provider))
 
 
 def test_container_runtime_does_not_allow_provider_registry_replacement() -> None:
@@ -197,3 +206,14 @@ def test_container_runtime_closes_async_singletons_once() -> None:
     asyncio.run(runtime.close_async())
 
     assert events == ["closed"]
+
+
+def test_container_runtime_rejects_resolution_after_close() -> None:
+    runtime = ContainerRuntime(providers=ProviderRegistry().provide(Database))
+
+    runtime.close()
+
+    assert runtime.closed is True
+    with pytest.raises(RuntimeClosedError, match="already closed"):
+        runtime.resolve(Database)
+    runtime.close()

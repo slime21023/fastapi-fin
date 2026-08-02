@@ -60,14 +60,14 @@ from .core import (
 )
 
 if TYPE_CHECKING:
-    from .adapters import AdapterError, FastAPIAdapter, inject
+    from .adapters import AdapterError, FastAPIAdapter, dependency
 
 __version__ = "0.1.0"
 
 
 def __getattr__(name: str) -> object:
     """Load FastAPI-dependent exports only when they are requested."""
-    if name in {"AdapterError", "FastAPIAdapter", "inject"}:
+    if name in {"AdapterError", "FastAPIAdapter", "dependency"}:
         adapter_module = import_module(".adapters", __name__)
         value = getattr(adapter_module, name)
         globals()[name] = value
@@ -116,13 +116,13 @@ __all__ = [
     "connect",
     "controller",
     "delete",
+    "dependency",
     "get",
     "get_controller_metadata",
     "get_module_metadata",
     "get_route_metadata",
     "guard",
     "head",
-    "inject",
     "module",
     "options",
     "patch",

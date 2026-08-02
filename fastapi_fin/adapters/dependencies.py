@@ -1,11 +1,12 @@
 """Translate container resolution into FastAPI dependency callables."""
 
 from collections.abc import AsyncIterator, Callable
+from contextvars import ContextVar
 from functools import wraps
 from inspect import Parameter, Signature, isawaitable, signature
 from typing import Protocol, cast
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 
 from ..core.dependency import ContainerRuntime, ResolutionContext, ServiceToken
 from ..core.errors import ResolutionError
@@ -15,9 +16,15 @@ from .errors import AdapterError
 __all__ = [
     "build_request_controller_endpoint",
     "controller_dependency",
-    "inject",
+    "dependency",
     "resolve_container_service",
 ]
+
+RUNTIME_STATE_ATTRIBUTE = "fastapi_fin_runtime"
+_CURRENT_CONTROLLER: ContextVar[object | None] = ContextVar(
+    "fastapi_fin_current_controller",
+    default=None,
+)
 
 
 class _SignatureEndpoint(Protocol):
@@ -37,16 +44,26 @@ async def _provide_request_context() -> AsyncIterator[ResolutionContext]:
 _REQUEST_CONTEXT_DEPENDENCY = Depends(_provide_request_context)
 
 
-def inject(
-    runtime: ContainerRuntime,
+def dependency(
     token: ServiceToken,
 ) -> Callable[..., object]:
-    """Build a FastAPI dependency that injects one provider per request."""
+    """Build a FastAPI dependency resolved by the current application's runtime."""
 
-    async def resolve(context: ResolutionContext = _REQUEST_CONTEXT_DEPENDENCY) -> object:
+    async def resolve(
+        request: Request,
+        context: ResolutionContext = _REQUEST_CONTEXT_DEPENDENCY,
+    ) -> object:
+        runtime = _runtime_from_request(request)
         return await resolve_container_service(runtime, token, context)
 
     return resolve
+
+
+def _runtime_from_request(request: Request) -> ContainerRuntime:
+    runtime = getattr(request.app.state, RUNTIME_STATE_ATTRIBUTE, None)
+    if not isinstance(runtime, ContainerRuntime):
+        raise ResolutionError("FastAPI app does not have a FastAPI-Fin runtime")
+    return runtime
 
 
 def controller_dependency(
@@ -61,6 +78,29 @@ def controller_dependency(
         return await resolve_container_service(runtime, controller, context)
 
     return resolve
+
+
+def _invoke_current_controller(
+    endpoint_name: str,
+    *args: object,
+    **kwargs: object,
+) -> object:
+    controller = _CURRENT_CONTROLLER.get()
+    if controller is None:
+        raise AdapterError("controller context is not available")
+    endpoint = getattr(controller, endpoint_name, None)
+    if endpoint is None:
+        raise AdapterError(f"controller does not expose endpoint {endpoint_name!r}")
+    return endpoint(*args, **kwargs)
+
+
+async def _invoke_current_controller_async(
+    endpoint_name: str,
+    *args: object,
+    **kwargs: object,
+) -> object:
+    result = _invoke_current_controller(endpoint_name, *args, **kwargs)
+    return await result if isawaitable(result) else result
 
 
 async def resolve_container_service(
@@ -84,6 +124,7 @@ def build_request_controller_endpoint(
     controller_metadata: ControllerMetadata,
     endpoint_template: Endpoint,
     endpoint_name: str,
+    endpoint_invoker: Callable[..., object] | None = None,
 ) -> Endpoint:
     """Wrap a controller method with a public FastAPI dependency marker."""
 
@@ -116,14 +157,21 @@ def build_request_controller_endpoint(
     @wraps(endpoint_template)
     async def request_endpoint(*args: object, **kwargs: object) -> object:
         controller = kwargs.pop(controller_parameter_name)
-        endpoint = getattr(controller, endpoint_name, None)
-        if endpoint is None:
-            raise AdapterError(
-                f"controller {controller_metadata.name!r} does not expose endpoint "
-                f"{endpoint_name!r}"
-            )
-        result = endpoint(*args, **kwargs)
-        return await result if isawaitable(result) else result
+        context_token = _CURRENT_CONTROLLER.set(controller)
+        try:
+            if endpoint_invoker is None:
+                endpoint = getattr(controller, endpoint_name, None)
+                if endpoint is None:
+                    raise AdapterError(
+                        f"controller {controller_metadata.name!r} does not expose endpoint "
+                        f"{endpoint_name!r}"
+                    )
+                result = endpoint(*args, **kwargs)
+            else:
+                result = endpoint_invoker(*args, **kwargs)
+            return await result if isawaitable(result) else result
+        finally:
+            _CURRENT_CONTROLLER.reset(context_token)
 
     signature_endpoint = cast("_SignatureEndpoint", request_endpoint)
     signature_endpoint.__signature__ = endpoint_signature

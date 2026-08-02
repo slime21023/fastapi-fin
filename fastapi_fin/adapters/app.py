@@ -6,12 +6,12 @@ from fastapi import APIRouter, FastAPI
 
 from ..application.compiler import CompiledRoute
 from ..application.registry import ApplicationRegistry
-from ..core.dependency import ContainerRuntime, ServiceToken
+from ..core.dependency import ContainerRuntime
 from ..core.events import EventDispatcher
 from ..core.guard import GuardPolicy, GuardRule
 from ..core.interceptor import InterceptorChain, InterceptorSpec
 from ..core.types import Scope
-from .dependencies import inject
+from .dependencies import RUNTIME_STATE_ATTRIBUTE, dependency
 from .errors import AdapterError
 from .lifespan import LifespanHandler, compose_lifespan
 from .router import ControllerFactory, compile_router
@@ -20,7 +20,7 @@ __all__ = [
     "CompiledRoute",
     "FastAPIAdapter",
     "LifespanHandler",
-    "inject",
+    "dependency",
 ]
 
 
@@ -31,12 +31,9 @@ def _normalize_iterable[T](values: Iterable[T], label: str) -> tuple[T, ...]:
         raise AdapterError(f"{label} must be iterable") from error
 
 
-def _build_runtime(registry: ApplicationRegistry) -> ContainerRuntime | None:
-    """Build one runtime and infer request-scoped providers for controllers."""
+def _build_runtime(registry: ApplicationRegistry) -> ContainerRuntime:
+    """Build one runtime and register every controller as request-scoped."""
     providers = registry.providers
-    if not providers.providers:
-        return None
-
     for metadata in registry.metadata.controllers:
         if providers.find(metadata.controller) is None:
             providers = providers.provide(metadata.controller, scope=Scope.REQUEST)
@@ -52,7 +49,6 @@ class FastAPIAdapter:
         *,
         controller_factory: ControllerFactory | None = None,
         registry: ApplicationRegistry | None = None,
-        _runtime: ContainerRuntime | None = None,
         guard_subject_provider: Callable[..., object] | None = None,
         global_guards: Iterable[GuardRule] = (),
         global_interceptors: Iterable[InterceptorSpec] = (),
@@ -64,20 +60,15 @@ class FastAPIAdapter:
             raise AdapterError("controller_factory must be callable")
         if registry is not None and not isinstance(registry, ApplicationRegistry):
             raise AdapterError("registry must be an ApplicationRegistry instance")
-        if _runtime is not None and not isinstance(_runtime, ContainerRuntime):
-            raise AdapterError("_runtime must be a ContainerRuntime instance")
-        if registry is not None and _runtime is not None:
-            raise AdapterError("registry and _runtime are mutually exclusive")
         if guard_subject_provider is not None and not callable(guard_subject_provider):
             raise AdapterError("guard_subject_provider must be callable")
         if event_dispatcher is not None and not isinstance(event_dispatcher, EventDispatcher):
             raise AdapterError("event_dispatcher must be an EventDispatcher instance")
         self._app = app
         self._controller_factory = controller_factory
-        if _runtime is not None:
-            self._runtime = _runtime
-        else:
-            self._runtime = _build_runtime(registry) if registry is not None else None
+        self._runtime = _build_runtime(registry) if registry is not None else None
+        if self._runtime is not None:
+            setattr(app.state, RUNTIME_STATE_ATTRIBUTE, self._runtime)
         self._guard_subject_provider = guard_subject_provider
         self._global_guards = GuardPolicy(
             rules=_normalize_iterable(global_guards, "global guards")
@@ -144,18 +135,12 @@ class FastAPIAdapter:
         adapter = cls(
             app,
             controller_factory=controller_factory,
-            _runtime=runtime,
             guard_subject_provider=guard_subject_provider,
             global_guards=global_guards,
             global_interceptors=global_interceptors,
             event_dispatcher=event_dispatcher,
         )
+        adapter._runtime = runtime
+        setattr(app.state, RUNTIME_STATE_ATTRIBUTE, runtime)
         app.include_router(adapter.compile_router(registry))
         return app
-
-    def inject(self, token: ServiceToken) -> Callable[..., object]:
-        """Create a FastAPI dependency backed by the provider registry."""
-
-        if self._runtime is None:
-            raise AdapterError("registry with providers is required for service injection")
-        return inject(self._runtime, token)

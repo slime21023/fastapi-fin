@@ -215,6 +215,27 @@ registry = (
 app = FastAPIAdapter.create_app(registry)
 ```
 
+Route 若需要直接取得 Provider，使用 `dependency()` 建立 FastAPI 原生的
+`Depends` marker。它會從目前的 FastAPI app 取得唯一的 application runtime，不需要
+建立或傳遞 `ContainerRuntime`：
+
+```python
+from fastapi import Depends
+from fastapi_fin import ApplicationRegistry, dependency
+
+
+class CurrentUser:
+    pass
+
+
+registry = ApplicationRegistry().provide(CurrentUser)
+current_user = Depends(dependency(CurrentUser))
+```
+
+因此 Provider 必須和使用它的 Controller 一起註冊在同一個 `ApplicationRegistry`，再由
+`FastAPIAdapter.create_app(registry)` 建立 app；這能確保 Singleton 與 resource cleanup
+都由同一個 FastAPI lifespan 管理。
+
 ## 開發原則
 
 - `fastapi_fin.core` 僅依賴標準函式庫與 `attrs`，不可 import FastAPI、Starlette 或 Pydantic。

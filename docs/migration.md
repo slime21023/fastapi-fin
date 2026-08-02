@@ -11,11 +11,16 @@ package 的公開 API；直接搬回這些模組會讓 FastAPI、Pydantic 或第
 |---|---|
 | route/controller/DI 組裝 | `ApplicationRegistry`、`.module()`、`.controller()`、`.provide()` |
 | permission rule | `GuardRule`、`GuardPolicy`、Adapter route dependency |
-| advanced service dependency | `Scope`、`inject` |
+| advanced service dependency | `Scope`、`dependency` |
 | cross-cutting logic | `InterceptorSpec`、`InterceptorChain` |
 | startup/shutdown callback | `EventDispatcher`、`ApplicationStarted`、`ApplicationStopping` |
 | typed configuration | `SettingSpec`、`ConfigSnapshot` |
 | FastAPI route integration | `FastAPIAdapter(app).include(registry)` |
+
+舊版若以 `FastAPIAdapter(...).inject(Token)` 建立 dependency，請改為
+`Depends(dependency(Token))`，並將 `Token` 的 Provider 放入同一個
+`ApplicationRegistry`。新的 dependency 會從目前 FastAPI app 取得唯一 Runtime，避免
+手動建立的 Adapter 與 application lifespan 使用不同 Singleton cache。
 
 ## Authentication、CSRF 與外部 provider
 

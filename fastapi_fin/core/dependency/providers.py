@@ -49,6 +49,11 @@ def _normalize_providers(values: tuple[Provider, ...]) -> tuple[Provider, ...]:
     normalized = tuple(values)
     if not all(isinstance(provider, Provider) for provider in normalized):
         raise DeclarationError("provider registry items must be Provider instances")
+    tokens: set[ServiceToken] = set()
+    for provider in normalized:
+        if provider.token in tokens:
+            raise RegistrationError(f"service token is already provided: {provider.token!r}")
+        tokens.add(provider.token)
     return normalized
 
 

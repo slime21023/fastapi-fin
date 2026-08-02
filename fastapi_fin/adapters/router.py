@@ -12,7 +12,10 @@ from ..core.dependency import ContainerRuntime
 from ..core.guard import GuardPolicy, GuardRule
 from ..core.interceptor import InterceptorChain, InterceptorSpec
 from ..core.metadata import ControllerMetadata, Endpoint, RouteMetadata
-from .dependencies import build_request_controller_endpoint
+from .dependencies import (
+    _invoke_current_controller_async,
+    build_request_controller_endpoint,
+)
 from .errors import AdapterError
 
 ControllerFactory = Callable[[type[object]], object]
@@ -108,11 +111,25 @@ def _compile_route(
     if instance is None:
         if runtime is None:
             raise AdapterError("container runtime is required for lazy controller resolution")
+        endpoint_invoker = None
+        if metadata.interceptors:
+
+            async def invoke_controller(*args: object, **kwargs: object) -> object:
+                return await _invoke_current_controller_async(
+                    endpoint_name,
+                    *args,
+                    **kwargs,
+                )
+
+            endpoint_invoker = InterceptorChain(interceptors=metadata.interceptors).apply(
+                invoke_controller
+            )
         endpoint = build_request_controller_endpoint(
             runtime,
             controller_metadata,
             metadata.endpoint,
             endpoint_name,
+            endpoint_invoker=endpoint_invoker,
         )
     else:
         endpoint = getattr(instance, endpoint_name, None)
@@ -121,7 +138,7 @@ def _compile_route(
                 f"controller {metadata.name!r} does not expose endpoint {endpoint_name!r}"
             )
     compiled_endpoint = cast("Endpoint", endpoint)
-    if metadata.interceptors:
+    if metadata.interceptors and instance is not None:
         compiled_endpoint = InterceptorChain(interceptors=metadata.interceptors).apply(
             compiled_endpoint
         )

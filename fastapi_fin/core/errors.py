@@ -15,3 +15,7 @@ class RegistrationError(FastAPIFinError):
 
 class ResolutionError(FastAPIFinError):
     """Raised when a dependency or runtime value cannot be resolved."""
+
+
+class RuntimeClosedError(ResolutionError):
+    """Raised when a closed dependency runtime is used again."""
