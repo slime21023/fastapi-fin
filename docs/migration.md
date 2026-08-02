@@ -9,9 +9,9 @@ package 的公開 API；直接搬回這些模組會讓 FastAPI、Pydantic 或第
 
 | 舊版用途 | 新架構入口 |
 |---|---|
-| route/controller 組裝 | `controller`、HTTP decorators、`module`、`MetadataRegistry` |
+| route/controller/DI 組裝 | `ApplicationRegistry`、`.module()`、`.controller()`、`.provide()` |
 | permission rule | `GuardRule`、`GuardPolicy`、Adapter route dependency |
-| service dependency | `ContainerSnapshot`、`ContainerRuntime`、`container_dependency` |
+| advanced service dependency | `Scope`、`inject` |
 | cross-cutting logic | `InterceptorSpec`、`InterceptorChain` |
 | startup/shutdown callback | `EventDispatcher`、`ApplicationStarted`、`ApplicationStopping` |
 | typed configuration | `SettingSpec`、`ConfigSnapshot` |

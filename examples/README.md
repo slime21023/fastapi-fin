@@ -13,7 +13,7 @@ uv run python examples/04_lifecycle_events.py
 第一個範例刻意以原生 FastAPI 為入口，再掛載 FastAPI-Fin；其餘範例展示擴展功能：
 
 1. FastAPI-first 路由與 OpenAPI 組裝
-2. `attrs` 架構下的 Container DI
+2. `ApplicationRegistry` 與 `attrs` 架構下的 Provider DI
 3. Guard 與 Interceptor 的宣告式組合
 4. Application lifespan 與 typed events
 

@@ -8,7 +8,7 @@ FastAPI-Fin 是以 `attrs` 為核心的 FastAPI 架構擴展，提供不可變 m
 from fastapi import FastAPI
 
 from fastapi_fin.adapters import FastAPIAdapter
-from fastapi_fin.application import MetadataRegistry, controller, get, module
+from fastapi_fin.application import ApplicationRegistry, controller, get, module
 
 
 @controller(prefix="/users")
@@ -23,7 +23,7 @@ class ApiModule:
     pass
 
 
-registry = MetadataRegistry().register_module(ApiModule)
+registry = ApplicationRegistry().module(ApiModule)
 app = FastAPI(title="My FastAPI app")
 
 
@@ -36,9 +36,9 @@ FastAPIAdapter(app).include(registry)
 ```
 
 FastAPI 仍然是 application 的主要入口；FastAPI-Fin 只透過 Adapter 將宣告式 routes
-掛載到既有 app，不取代 FastAPI 的 route、middleware 或 OpenAPI 使用方式。若配置
-`ContainerRuntime` 或 `EventDispatcher`，才使用 `create_app()`，讓 Adapter 能正確管理
-application lifespan。
+掛載到既有 app，不取代 FastAPI 的 route、middleware 或 OpenAPI 使用方式。若
+`ApplicationRegistry` 含有 providers 或配置 `EventDispatcher`，請使用 `create_app()`，
+讓 Adapter 能正確管理 application lifespan。
 
 需要在框架無關的環境檢查組裝結果時，可使用 `compile_application()` 取得 immutable
 `CompiledApplication`；FastAPI Adapter 內部也使用此 compiler，再將結果掛載為
@@ -50,20 +50,23 @@ application lifespan。
 
 ## DI 與 lifecycle
 
-```python
-from fastapi_fin import ContainerRuntime, ContainerSnapshot, Lifecycle
+應用程式組裝只需要記住 `ApplicationRegistry` 的 `.module()` 與 `.provide()`：class token
+可以省略 factory，interface／string token 則明確提供 factory；scope 使用 `Scope` 表達。
+Controller 已由 metadata 自動接入 DI，只有需要特殊 scope 或 factory 時才需明確註冊：
 
-runtime = ContainerRuntime(
-    snapshot=ContainerSnapshot().bind(
-        UserController,
-        UserController,
-        lifecycle=Lifecycle.REQUEST,
-    )
+```python
+from fastapi_fin import ApplicationRegistry, Scope
+
+registry = (
+    ApplicationRegistry()
+    .module(ApiModule)
+    .provide(Database, scope=Scope.SINGLETON)
+    .provide(UserService)
 )
-app = FastAPIAdapter.create_app(registry, container_runtime=runtime)
+app = FastAPIAdapter.create_app(registry)
 ```
 
-Container snapshot 是 immutable attrs value。`request` / `transient` service 的 `close()` 或 `aclose()` 會在 request 結束時釋放；singleton resource 會在 application shutdown 時釋放。singleton 不可依賴 request-scoped service。
+Application registry 是 immutable attrs value。`request` / `transient` service 的 `close()` 或 `aclose()` 會在 request 結束時釋放；singleton resource 會在 application shutdown 時釋放。singleton 不可依賴 request-scoped service。
 
 Framework-independent code 可使用 `ResolutionContext` 的 `with`／`async with` 自動管理
 request/transient resource cleanup。
@@ -111,8 +114,8 @@ normalizer 支援同步與非同步 callable，`publish_async()` 會等待非同
 - 只有 `fastapi_fin.adapters` 呼叫 FastAPI 公開 API。
 - Adapter 邊界依責任拆分為 `app.py`（組裝）、`router.py`（路由轉譯）、
   `dependencies.py`（DI 轉譯）、`lifespan.py`（生命週期轉譯）與 `errors.py`（邊界錯誤）。
-- root package 只在實際存取 `FastAPIAdapter` 或 `container_dependency` 時載入 FastAPI。
-- metadata、binding、policy、subscription 與 config 都以 immutable `attrs` snapshot 表達。
+- root package 只在實際存取 `FastAPIAdapter` 或 `inject` 時載入 FastAPI。
+- provider、metadata、policy、subscription 與 config 都以 immutable `attrs` snapshot 表達。
 - Adapter contract tests 驗證 FastAPI routing、Depends、lifespan、OpenAPI 與版本相容性。
 - Adapter 建構參數與 lifespan handler 會在 boundary 即時驗證，避免錯誤延後到 application startup。
 

@@ -6,6 +6,11 @@
 
 ### Added
 
+- DI lower-level API 改以 `Provider`、`ProviderRegistry`、`Scope` 與 `provide()` 為主要語彙，
+  並將 provider registration 與 runtime resolution 分離至 `providers.py`／`runtime.py`。
+- Application assembly 改以 immutable `ApplicationRegistry` 作為單一高階入口，整合
+  Controller metadata 與 provider declarations；Adapter 會自動將 Controller 視為 request-scoped provider。
+
 - framework-independent application compiler，提供 immutable `CompiledApplication`
   與 `CompiledRoute`，並讓 FastAPI Adapter 透過 compiler 完成路由組裝。
 - async lazy singleton 的並發初始化去重，避免同一 service 被重複建立。
@@ -40,7 +45,7 @@
 - Application decorators 對非 iterable 的 controller/module composition options 統一拋出
   `DeclarationError`，不再洩漏原生 `TypeError`。
 - FastAPIAdapter 建構參數與 lifespan handler 增加 declaration-time `AdapterError` validation。
-- MetadataRegistry/MetadataSnapshot 對錯誤 controller metadata 與非 iterable registration input
+- ApplicationRegistry/MetadataSnapshot 對錯誤 controller metadata 與非 iterable registration input
   統一拋出 `RegistrationError`，避免洩漏原生 `TypeError`/`AttributeError`。
 - DI sync cleanup 遇到 async-only resource 時會保留 state，允許後續以 `close_async()` 完成
   cleanup，避免錯誤路徑造成 resource leak。
