@@ -1,33 +1,31 @@
-"""Use create_app() to compose application lifecycle events."""
+"""Use explicit lifecycle hooks owned by the FastAPI adapter."""
 
 from fastapi.testclient import TestClient
 
-from fastapi_fin import (
-    ApplicationStarted,
-    ApplicationStopping,
-    EventDispatcher,
-    FastAPIAdapter,
-)
-from fastapi_fin.application import ApplicationRegistry
+from fastapi_fin.adapters import FastAPIAdapter
+from fastapi_fin.application import ApplicationDefinition, LifecycleDefinition
 
 events: list[str] = []
-dispatcher = (
-    EventDispatcher()
-    .subscribe(ApplicationStarted, lambda _event: events.append("started"))
-    .subscribe(ApplicationStopping, lambda _event: events.append("stopping"))
-)
+
+
+def startup() -> None:
+    events.append("started")
+
+
+def shutdown() -> None:
+    events.append("stopped")
 
 
 def build_app():
-    return FastAPIAdapter.create_app(
-        ApplicationRegistry(),
-        event_dispatcher=dispatcher,
+    definition = ApplicationDefinition(
+        lifecycle=LifecycleDefinition(startup=(startup,), shutdown=(shutdown,)),
     )
+    return FastAPIAdapter.create_app(definition)
 
 
 if __name__ == "__main__":
     with TestClient(build_app()):
         assert events == ["started"]
 
-    assert events == ["started", "stopping"]
+    assert events == ["started", "stopped"]
     print("04_lifecycle_events: OK")

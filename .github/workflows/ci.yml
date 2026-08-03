@@ -57,7 +57,7 @@ jobs:
       - name: Dependency audit
         run: |
           trap 'rm -f audit-requirements.txt' EXIT
-          uv export --locked --format requirements.txt --all-groups --no-emit-project --output-file audit-requirements.txt
+          uv export --locked --format requirements-txt --all-groups --no-emit-project --output-file audit-requirements.txt
           uv run --no-sync pip-audit --strict -r audit-requirements.txt
 
       - name: Test
@@ -69,6 +69,13 @@ jobs:
           uv run --no-sync python examples/02_dependency_injection.py
           uv run --no-sync python examples/03_guard_and_interceptor.py
           uv run --no-sync python examples/04_lifecycle_events.py
+          uv run --no-sync python examples/05_request_response.py
+          uv run --no-sync python examples/06_scopes_and_cleanup.py
+          uv run --no-sync python examples/07_configuration.py
+          uv run --no-sync python examples/08_events_and_cache.py
+          uv run --no-sync python examples/09_complete_pipeline.py
+          uv run --no-sync python examples/10_validation_failures.py
+          uv run --no-sync python -m examples.complete_app
 
       - name: Build package
         run: uv build
