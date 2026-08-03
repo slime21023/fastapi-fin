@@ -1,130 +1,95 @@
 # FastAPI-Fin
 
-FastAPI-Fin 是以 `attrs` 為核心的 FastAPI 架構擴展，提供不可變 metadata、DI container、宣告式 Guard、Interceptor、typed events 與 typed configuration，同時保留 FastAPI 的 OpenAPI、Pydantic validation 與 ASGI middleware 生態。
+FastAPI-Fin 1.0.0 是一個以 FastAPI 為宿主的應用程式組裝擴展。它提供明確的 route
+definition、provider lifecycle、request context、Guard 與 Interceptor，同時保留
+FastAPI 的路由、OpenAPI、Pydantic validation 與 ASGI lifespan 行為。
+
+1.0.0 採 clean-slate 設計，不提供舊版 API 相容層。
 
 ## 快速開始
 
 ```python
+from fastapi_fin.adapters import FastAPIAdapter
+from fastapi_fin.application import ApplicationDefinition, route
+
+
+def get_user(user_id: int) -> dict[str, int]:
+    return {"user_id": user_id}
+
+
+definition = ApplicationDefinition(
+    routes=(route("/users/{user_id}", get_user),),
+)
+app = FastAPIAdapter.create_app(definition, title="My application")
+```
+
+如果只需要把無 runtime 狀態的 routes 掛載到既有 FastAPI app：
+
+```python
 from fastapi import FastAPI
 
-from fastapi_fin.adapters import FastAPIAdapter
-from fastapi_fin.application import ApplicationRegistry, controller, get, module
+app = FastAPI()
+FastAPIAdapter.mount(app, definition)
+```
+
+包含 providers 或 lifecycle hooks 的 definition 必須使用 `create_app()`，由 Adapter
+統一管理 startup、request context 與 shutdown。
+
+## DI
+
+Provider 使用明確 dependency list，不依賴 runtime annotation graph 推導：
+
+```python
+from fastapi_fin.application import Scope, inject, provide
 
 
-@controller(prefix="/users")
-class UserController:
-    @get("/{user_id}")
-    def get_user(self, user_id: int) -> dict[str, int]:
-        return {"user_id": user_id}
-
-
-@module(prefix="/api", controllers=(UserController,))
-class ApiModule:
+class Database:
     pass
 
 
-registry = ApplicationRegistry().module(ApiModule)
-app = FastAPI(title="My FastAPI app")
+class UserService:
+    def __init__(self, database: Database) -> None:
+        self.database = database
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-FastAPIAdapter(app).include(registry)
+definition = ApplicationDefinition(
+    routes=(route("/users", list_users),),
+    providers=(
+        provide(Database, scope=Scope.APPLICATION, eager=True),
+        provide(UserService, dependencies=(Database,)),
+    ),
+)
 ```
 
-FastAPI 仍然是 application 的主要入口；FastAPI-Fin 只透過 Adapter 將宣告式 routes
-掛載到既有 app，不取代 FastAPI 的 route、middleware 或 OpenAPI 使用方式。若
-`ApplicationRegistry` 含有 providers 或配置 `EventDispatcher`，請使用 `create_app()`，
-讓 Adapter 能正確管理 application lifespan。
-
-需要在框架無關的環境檢查組裝結果時，可使用 `compile_application()` 取得 immutable
-`CompiledApplication`；FastAPI Adapter 內部也使用此 compiler，再將結果掛載為
-`APIRouter`。
-
-`FastAPIAdapter` 與 `dependency()` 可從 `fastapi_fin.adapters` 匯入，也會由 root package lazy export。Controller 支援所有 `HttpMethod` convenience decorators，例如 `get`、`post`、`put`、`patch` 與 `delete`；多 method route 可使用 `route(..., methods=[...])`。
-若需要讀取 decorator 產生的 immutable route metadata，可使用 root export 的
-`get_route_metadata()`。
-
-## DI 與 lifecycle
-
-應用程式組裝只需要記住 `ApplicationRegistry` 的 `.module()` 與 `.provide()`：class token
-可以省略 factory，interface／string token 則明確提供 factory；scope 使用 `Scope` 表達。
-Controller 已由 metadata 自動接入 DI，只有需要特殊 scope 或 factory 時才需明確註冊：
+Endpoint 參數可用 `inject()` 取得 provider：
 
 ```python
-from fastapi_fin import ApplicationRegistry, Scope
-
-registry = (
-    ApplicationRegistry()
-    .module(ApiModule)
-    .provide(Database, scope=Scope.SINGLETON)
-    .provide(UserService)
-)
-app = FastAPIAdapter.create_app(registry)
+def list_users(service: UserService = inject(UserService)) -> list[str]:
+    return ["example"]
 ```
 
-Application registry 是 immutable attrs value。`request` / `transient` service 的 `close()` 或 `aclose()` 會在 request 結束時釋放；singleton resource 會在 application shutdown 時釋放。singleton 不可依賴 request-scoped service。
+1.0.0 只有 `APPLICATION` 與 `REQUEST` 兩種 scope。Application model 會在啟動前驗證
+missing provider、circular dependency 與 scope violation。
 
-Framework-independent code 可使用 `ResolutionContext` 的 `with`／`async with` 自動管理
-request/transient resource cleanup。
+## 架構
 
-Sync／async lazy singleton 的並發初始化都會由 runtime 去重，確保同一 factory 只執行一次，
-也適用於同步 endpoint 所在的 thread pool。
+```text
+ApplicationDefinition
+        │
+        ▼
+ApplicationModel（immutable、內部模型）
+        │
+        ├── ApplicationRuntime
+        └── FastAPIAdapter
+```
 
-DI factory 支援現代 Python 的 `Annotated[Service, ...]` annotation，使用第一個 type
-或 string token 解析服務。
+- `fastapi_fin.application`：definition、assembly 與 immutable model，不依賴 FastAPI。
+- `fastapi_fin.runtime`：application runtime、provider resolver、request context。
+- `fastapi_fin.features`：Guard、Interceptor、Events、Config 與 Cache 等獨立功能。
+- `fastapi_fin.adapters`：唯一接觸 FastAPI 的 boundary。
 
-HTTP request-time DI resolution 失敗時，Adapter 會回傳不暴露 container 細節的 generic
-500 response；framework-independent core 仍使用 `ResolutionError`。
-
-Typed config 的 optional setting 支援 parser-aware `default`，缺少環境或 raw input 時
-仍會經過原始 parser。
-
-Route decorators 支援 `response_model`、`status_code`、`tags`、`summary`、
-`description`、`response_description` 與 `operation_id`，並保留 FastAPI 的 OpenAPI
-與 Pydantic response validation。
-
-Interceptor timeout 僅適用於 async pipeline；套用至純同步 endpoint 時會在組裝階段
-拒絕，避免 timeout 設定被靜默忽略。
-
-同步 pipeline 若在執行期間回傳 coroutine，也會立即拒絕，避免未 await 的 coroutine
-被當成正常 endpoint 結果。
-
-Guard predicate 必須回傳 `bool`；非布林結果會 fail closed，不會被當作 truthy 授權。
-
-敏感設定除了可透過 `redacted()` 取得遮罩值外，`ConfigSnapshot` 的 `repr()` 也會
-自動遮罩，避免 debug 輸出意外洩漏 secret。
-
-retry、timeout、cache TTL、priority 與 snapshot version 會在宣告時進行嚴格數值驗證，
-不接受 `bool` 或非有限的 timeout／TTL。
-
-編譯 endpoint 使用的 runtime cache 會同步保護 lookup、store 與 eviction，適合同步
-endpoint 在 thread pool 中併發執行；cache policy 本身仍是 immutable attrs value。
-
-Typed event 可使用 immutable `EventDescriptor` 集中定義事件型別與 normalization 規則；
-normalizer 支援同步與非同步 callable，`publish_async()` 會等待非同步 normalizer。既有
-直接以 event type 訂閱的 API 仍然相容。
-
-## 架構原則
-
-- `fastapi_fin.core` 與 `fastapi_fin.application` 不依賴 FastAPI、Starlette 或 Pydantic。
-- 只有 `fastapi_fin.adapters` 呼叫 FastAPI 公開 API。
-- Adapter 邊界依責任拆分為 `app.py`（組裝）、`router.py`（路由轉譯）、
-  `dependencies.py`（DI 轉譯）、`lifespan.py`（生命週期轉譯）與 `errors.py`（邊界錯誤）。
-- root package 只在實際存取 `FastAPIAdapter` 或 `dependency` 時載入 FastAPI。
-- provider、metadata、policy、subscription 與 config 都以 immutable `attrs` snapshot 表達。
-- Adapter contract tests 驗證 FastAPI routing、Depends、lifespan、OpenAPI 與版本相容性。
-- Adapter 建構參數與 lifespan handler 會在 boundary 即時驗證，避免錯誤延後到 application startup。
-
-完整使用方式請參閱 [docs/usage.md](docs/usage.md)，舊版 API 遷移請參閱
-[docs/migration.md](docs/migration.md)。
-版本變更請參閱 [CHANGELOG.md](CHANGELOG.md)。
-
-可執行的最小範例位於 [examples/README.md](examples/README.md)，涵蓋路由、DI、Guard、
-Interceptor 與 lifecycle。
+Definition 是宣告；Model 是驗證後的結構；Runtime 是可變的執行狀態。Adapter 不會在
+request time 重新編譯 route 或 provider graph。
 
 ## 開發
 
@@ -133,12 +98,10 @@ uv sync --locked
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
-uv run bandit -q -r fastapi_fin
 uv run pytest
+uv run bandit -q -r fastapi_fin
 uv build
 ```
 
-專案使用 Python 3.12+、`uv`、Ruff、ty、pytest 與 pre-commit；FastAPI Adapter 的 CI 會
-在 Python 3.12／3.13 驗證兩組相容的 FastAPI／Starlette 版本 stack。
-測試會將 warnings 視為 errors，避免未 await 的 coroutine 或相容性退化被忽略。
-貢獻與 agent skills 使用方式請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。
+範例位於 [examples/README.md](examples/README.md)，使用方式說明位於
+[docs/usage.md](docs/usage.md)，完整範例導讀位於 [docs/examples.md](docs/examples.md)。

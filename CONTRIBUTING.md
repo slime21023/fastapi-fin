@@ -1,4 +1,4 @@
-# Contributing to FastAPI-Fin
+# Contributing to FastAPI-Fin 1.0.0
 
 ## 開發環境
 
@@ -9,48 +9,45 @@ uv sync --locked
 uv run pre-commit install
 ```
 
-日常快速迴圈：
+快速驗證：
 
 ```powershell
-uv run ruff format .
+uv run ruff format --check .
 uv run ruff check .
 uv run ty check
-uv run pytest -m "not slow and not integration"
+uv run pytest
 ```
 
 完整驗證：
 
 ```powershell
-uv run pre-commit run --all-files
 uv run bandit -q -r fastapi_fin
-uv run pytest --cov=fastapi_fin --cov-report=term-missing --cov-fail-under=85
 uv build
 ```
 
-依賴變更後必須執行 `uv lock`，並確認 `uv lock --check` 與 `pip-audit --strict`
-都通過。不要直接使用 `pip install` 或手動修改 `uv.lock`。
-
 ## 架構規則
 
-- `fastapi_fin.core` 只依賴標準函式庫與 `attrs`，不可 import FastAPI、Starlette 或 Pydantic。
-- `fastapi_fin.application` 只負責宣告、metadata 與 framework-independent compiler。
-- `fastapi_fin.adapters` 是唯一可呼叫 FastAPI API 的邊界。
-- metadata、policy、subscription、binding 與 config 使用 immutable attrs snapshot。
-- 執行期 cache、request context 與 resource lifecycle state 才可以是 mutable runtime state。
+- `fastapi_fin.application` 只描述與驗證 immutable application definitions。
+- `fastapi_fin.runtime` 只保存 application/request 執行期狀態。
+- `fastapi_fin.features` 不依賴 FastAPI，並且可以獨立採用。
+- 只有 `fastapi_fin.adapters` 可以 import 或呼叫 FastAPI API。
+- Application model、route definitions、provider definitions 與 policies 不可變。
+- Immutable definition models 使用 attrs 的 converter/validator；公開輸入仍統一拋出
+  `DefinitionError`，不可直接依賴 attrs 的原生 `TypeError`／`ValueError`。
+- 所有 declaration input 必須在建立時正規化；跨物件錯誤必須在 assembly 前拒絕。
+- Runtime state 可以使用 attrs factory 簡化欄位初始化，但 lifecycle、cleanup 與 concurrency
+  邏輯必須保持明確且可測試。
+- Adapter 必須使用 FastAPI 公開 API，並保留 endpoint signature 與 OpenAPI 行為。
+- 不新增舊版 API wrapper、deprecated alias 或 migration shim。
 
-新增功能時，先建立 core value object 與宣告期驗證，再於 Adapter 增加框架轉譯；不要
-讓 core 為了方便而依賴 FastAPI 物件。
+## 測試分層
 
-## Agent skills
+- `tests/unit`：不 import 或啟動 FastAPI 的純邏輯測試。
+- `tests/contract`：驗證 FastAPI Adapter 的 route、Depends、OpenAPI、HTTP error 與 lifespan。
+- `tests/integration`：驗證完整 application definition 到 HTTP request 的流程。
 
-專案專用 skills 位於 `.agents/skills/`：
+新增功能前先決定它屬於 definition、runtime、feature 或 adapter layer；不要把 FastAPI
+物件帶入 application、runtime 或 feature。
 
-- `fastapi-fin-architecture`：檢查分層、attrs immutability 與 Adapter 邊界。
-- `fastapi-fin-testing`：決定 unit、contract、integration 測試層級。
-- `fastapi-python`：FastAPI 與 async endpoint 實作慣例。
-- `python-quality`：Ruff、ty 與靜態品質檢查。
-- `python-type-hints`：公共 API 型別設計。
-- `reviewing-python-libraries`：package、security、CI 與發行面檢查。
-
-修改 core、application 或 Adapter 時，應先閱讀對應 skill 的 `SKILL.md`，並在提交前
-完成相關測試層級與完整品質閘門。
+修改 DI、Guard、Interceptor、Events、Config 或 Adapter 時，應同步增加失敗路徑與 lifecycle
+測試，並完成上述品質檢查。
