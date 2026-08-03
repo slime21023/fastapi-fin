@@ -1,12 +1,5 @@
-"""FastAPI integration boundary for FastAPI-Fin."""
+"""FastAPI integration boundary."""
 
-from .app import CompiledRoute, FastAPIAdapter, LifespanHandler, dependency
-from .errors import AdapterError
+from .fastapi import FastAPIAdapter, Lifespan
 
-__all__ = [
-    "AdapterError",
-    "CompiledRoute",
-    "FastAPIAdapter",
-    "LifespanHandler",
-    "dependency",
-]
+__all__ = ["FastAPIAdapter", "Lifespan"]

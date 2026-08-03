@@ -1,30 +1,29 @@
-from fastapi.testclient import TestClient
-import pytest
+import asyncio
 
-from fastapi_fin import controller, get, module
+import httpx
+
 from fastapi_fin.adapters import FastAPIAdapter
-from fastapi_fin.application import ApplicationRegistry
+from fastapi_fin.application import ApplicationDefinition, route
 
 
-@controller(prefix="/items")
-class ItemController:
-    @get("/{item_id}")
-    def get_item(self, item_id: int) -> dict[str, int]:
-        return {"item_id": item_id}
+def test_complete_definition_to_http_flow() -> None:
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
 
+    app = FastAPIAdapter.create_app(
+        ApplicationDefinition(routes=(route("/health", health),)),
+    )
 
-@module("public-api", prefix="/api", controllers=(ItemController,))
-class PublicApiModule:
-    pass
+    async def scenario() -> httpx.Response:
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://test",
+            ) as client,
+        ):
+            return await client.get("/health")
 
-
-@pytest.mark.integration
-def test_complete_module_to_http_request_flow() -> None:
-    registry = ApplicationRegistry().module(PublicApiModule)
-    app = FastAPIAdapter.create_app(registry)
-
-    with TestClient(app) as client:
-        response = client.get("/api/items/7")
-
+    response = asyncio.run(scenario())
     assert response.status_code == 200
-    assert response.json() == {"item_id": 7}
+    assert response.json() == {"status": "ok"}
