@@ -22,7 +22,13 @@ nav = [
     { "測試" = "guide/testing.md" },
   ] },
   { "API 參考" = [
-    { "公開 API" = "reference/api.md" },
+    { "Reference overview" = "reference/index.md" },
+    { "Application definitions" = "reference/application.md" },
+    { "Runtime" = "reference/runtime.md" },
+    { "FastAPI adapter" = "reference/adapters.md" },
+    { "Security 與 JWT" = "reference/security.md" },
+    { "Features" = "reference/features.md" },
+    { "Errors" = "reference/errors.md" },
   ] },
   { "範例" = "examples/index.md" },
 ]

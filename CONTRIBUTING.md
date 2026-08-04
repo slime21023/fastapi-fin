@@ -43,7 +43,7 @@ uv run zensical build --strict
 ```
 
 新增文件頁面後，必須同步更新 `zensical.toml` 的 `project.nav`。使用文件只描述目前
-公開 API 與使用方式；API 詳細清單集中在 `docs/reference/api.md`，可執行範例集中在
+公開 API 與使用方式；API reference 依模組分布在 `docs/reference/`，可執行範例集中在
 `examples/`。
 
 ## 架構規則
