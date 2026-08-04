@@ -15,7 +15,7 @@ uv run python -m examples.complete_app
 
 1. `domain.py`：Pydantic request/response models
 2. `providers.py`：application/request provider 與 disposer
-3. `routes.py`：endpoint 與 `inject()`
+3. `routes.py`：`ApplicationRouter`、endpoint 與 `inject()`
 4. `policies.py`：Guard 與 Interceptor
 5. `lifecycle.py`：startup/shutdown hooks
 6. `app.py`：ApplicationDefinition 組裝與 HTTP smoke test

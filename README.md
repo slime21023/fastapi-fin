@@ -1,10 +1,8 @@
 # FastAPI-Fin
 
-FastAPI-Fin 1.0.0 是一個以 FastAPI 為宿主的應用程式組裝擴展。它提供明確的 route
+FastAPI-Fin 1.0.1 是一個以 FastAPI 為宿主的應用程式組裝擴展。它提供明確的 route
 definition、provider lifecycle、request context、Guard 與 Interceptor，同時保留
 FastAPI 的路由、OpenAPI、Pydantic validation 與 ASGI lifespan 行為。
-
-1.0.0 採 clean-slate 設計，不提供舊版 API 相容層。
 
 ## 快速開始
 
@@ -30,6 +28,22 @@ from fastapi import FastAPI
 
 app = FastAPI()
 FastAPIAdapter.mount(app, definition)
+```
+
+也可以使用接近 FastAPI `APIRouter` 的 route module：
+
+```python
+from fastapi_fin.application import ApplicationDefinition, ApplicationRouter
+
+router = ApplicationRouter(prefix="/users", tags=("users",))
+
+
+@router.get("/{user_id}")
+def get_user(user_id: int) -> dict[str, int]:
+    return {"user_id": user_id}
+
+
+definition = ApplicationDefinition(routes=router)
 ```
 
 包含 providers 或 lifecycle hooks 的 definition 必須使用 `create_app()`，由 Adapter
@@ -68,7 +82,7 @@ def list_users(service: UserService = inject(UserService)) -> list[str]:
     return ["example"]
 ```
 
-1.0.0 只有 `APPLICATION` 與 `REQUEST` 兩種 scope。Application model 會在啟動前驗證
+1.0.1 只有 `APPLICATION` 與 `REQUEST` 兩種 scope。Application model 會在啟動前驗證
 missing provider、circular dependency 與 scope violation。
 
 ## 架構
@@ -100,8 +114,14 @@ uv run ruff check .
 uv run ty check
 uv run pytest
 uv run bandit -q -r fastapi_fin
+uv run zensical build --strict
 uv build
 ```
 
-範例位於 [examples/README.md](examples/README.md)，使用方式說明位於
-[docs/usage.md](docs/usage.md)，完整範例導讀位於 [docs/examples.md](docs/examples.md)。
+完整使用文件位於 [docs/index.md](docs/index.md)，範例位於 [examples/README.md](examples/README.md)。
+
+本地預覽文件站點：
+
+```powershell
+uv run zensical serve
+```

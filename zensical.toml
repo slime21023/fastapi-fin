@@ -1,0 +1,44 @@
+[project]
+site_name = "FastAPI-Fin"
+site_description = "Explicit application definitions and runtime extensions for FastAPI."
+docs_dir = "docs"
+site_dir = "site"
+repo_url = "https://github.com/slime21023/fastapi-fin"
+repo_name = "slime21023/fastapi-fin"
+edit_uri = "edit/main/docs/"
+nav = [
+  { "首頁" = "index.md" },
+  { "開始使用" = [
+    { "安裝與第一個 App" = "guide/getting-started.md" },
+    { "核心概念" = "guide/concepts.md" },
+  ] },
+  { "功能指南" = [
+    { "Route 與 FastAPI" = "guide/routes.md" },
+    { "Dependency Injection" = "guide/dependency-injection.md" },
+    { "Lifecycle 與資源管理" = "guide/lifecycle.md" },
+    { "Guard 與 Interceptor" = "guide/policies.md" },
+    { "Security 與 JWT" = "guide/security.md" },
+    { "獨立功能" = "guide/features.md" },
+    { "測試" = "guide/testing.md" },
+  ] },
+  { "API 參考" = [
+    { "公開 API" = "reference/api.md" },
+  ] },
+  { "範例" = "examples/index.md" },
+]
+
+[project.theme]
+language = "zh-TW"
+features = [
+  "navigation.tabs",
+  "navigation.sections",
+  "navigation.expand",
+  "navigation.path",
+  "navigation.top",
+  "toc.follow",
+  "search.suggest",
+  "search.highlight",
+  "content.code.copy",
+  "content.action.view",
+  "content.action.edit",
+]

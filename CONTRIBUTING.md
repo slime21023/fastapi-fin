@@ -25,6 +25,27 @@ uv run bandit -q -r fastapi_fin
 uv build
 ```
 
+## 文件開發
+
+文件使用 Zensical 編寫與建置。Markdown source 位於 `docs/`，網站導覽與建置設定位於
+根目錄的 `zensical.toml`。
+
+本地預覽：
+
+```powershell
+uv run zensical serve
+```
+
+執行嚴格建置檢查：
+
+```powershell
+uv run zensical build --strict
+```
+
+新增文件頁面後，必須同步更新 `zensical.toml` 的 `project.nav`。使用文件只描述目前
+公開 API 與使用方式；API 詳細清單集中在 `docs/reference/api.md`，可執行範例集中在
+`examples/`。
+
 ## 架構規則
 
 - `fastapi_fin.application` 只描述與驗證 immutable application definitions。
