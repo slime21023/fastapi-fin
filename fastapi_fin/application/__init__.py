@@ -16,9 +16,11 @@ from .definitions import (
     provide,
     route,
 )
+from .router import ApplicationRouter
 
 __all__ = [
     "ApplicationDefinition",
+    "ApplicationRouter",
     "Endpoint",
     "HttpMethod",
     "Inject",

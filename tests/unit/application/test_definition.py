@@ -4,6 +4,7 @@ import pytest
 
 from fastapi_fin.application import (
     ApplicationDefinition,
+    ApplicationRouter,
     HttpMethod,
     LifecycleDefinition,
     Scope,
@@ -32,6 +33,43 @@ def test_definitions_are_immutable_after_normalization() -> None:
     assert definition.tags == ("system",)
     with pytest.raises(AttributeError):
         setattr(definition, "path", "/changed")  # noqa: B010
+
+
+def test_application_definition_snapshots_route_sources_at_creation() -> None:
+    users = ApplicationRouter(prefix="/users")
+    admin = ApplicationRouter(prefix="/admin")
+
+    @users.get("/")
+    def list_users() -> list[str]:
+        return []
+
+    @admin.get("/")
+    def dashboard() -> dict[str, str]:
+        return {"status": "ok"}
+
+    definition = ApplicationDefinition(routes=(users, admin))
+
+    @users.get("/{user_id}")
+    def get_user(user_id: int) -> dict[str, int]:
+        return {"user_id": user_id}
+
+    assert tuple(route.path for route in definition.routes) == ("/users/", "/admin/")
+    assert definition.routes[0].endpoint is list_users
+    assert definition.routes[1].endpoint is dashboard
+
+
+def test_application_definition_accepts_one_route_source_directly() -> None:
+    router = ApplicationRouter(prefix="/health")
+
+    @router.get("/")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    definition = ApplicationDefinition(routes=router)
+
+    assert len(definition.routes) == 1
+    assert definition.routes[0].path == "/health/"
+    assert definition.routes[0].endpoint is health
 
 
 def test_assembly_orders_providers_by_declared_dependencies() -> None:

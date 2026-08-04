@@ -9,6 +9,7 @@ import pytest
 from fastapi_fin.adapters import FastAPIAdapter
 from fastapi_fin.application import (
     ApplicationDefinition,
+    ApplicationRouter,
     LifecycleDefinition,
     Scope,
     inject,
@@ -55,6 +56,25 @@ def test_adapter_preserves_route_options_and_openapi() -> None:
     assert response.status_code == 200
     assert response.json() == {"item_id": 7}
     assert app.openapi()["paths"]["/items/{item_id}"]["get"]["operationId"] == "read-item"
+
+
+def test_adapter_compiles_application_router_decorators() -> None:
+    router = ApplicationRouter(prefix="/users", tags=("users",))
+
+    @router.get("/{user_id}", operation_id="read-user")
+    def read_user(user_id: int) -> dict[str, int]:
+        return {"user_id": user_id}
+
+    app = FastAPIAdapter.create_app(
+        ApplicationDefinition(routes=router),
+    )
+    response = request(app, "GET", "/users/42")
+
+    assert response.status_code == 200
+    assert response.json() == {"user_id": 42}
+    operation = app.openapi()["paths"]["/users/{user_id}"]["get"]
+    assert operation["operationId"] == "read-user"
+    assert operation["tags"] == ["users"]
 
 
 def test_adapter_resolves_application_and_request_dependencies() -> None:

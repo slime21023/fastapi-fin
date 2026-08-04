@@ -9,35 +9,16 @@ from fastapi_fin.application import (
     LifecycleDefinition,
     Scope,
     provide,
-    route,
 )
-from fastapi_fin.features import GuardDefinition, InterceptorDefinition
+from fastapi_fin.features import InterceptorDefinition
 
 from . import lifecycle, policies, providers
-from .domain import TaskView
-from .routes import create_task, list_tasks
+from .routes import router as task_router
 
 
 def build_app() -> FastAPI:
     definition = ApplicationDefinition(
-        routes=(
-            route(
-                "/tasks",
-                list_tasks,
-                methods="GET",
-                response_model=list[TaskView],
-                tags=("tasks",),
-            ),
-            route(
-                "/tasks",
-                create_task,
-                methods="POST",
-                response_model=TaskView,
-                status_code=201,
-                tags=("tasks",),
-                guards=(GuardDefinition(policies.admin_only, name="admin-only"),),
-            ),
-        ),
+        routes=task_router,
         providers=(
             provide(
                 providers.TaskRepository,
@@ -61,7 +42,7 @@ def build_app() -> FastAPI:
     return FastAPIAdapter.create_app(
         definition,
         title="FastAPI-Fin complete Task API",
-        version="1.0.0",
+        version="1.0.1",
     )
 
 

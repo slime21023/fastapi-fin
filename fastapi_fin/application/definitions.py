@@ -254,8 +254,35 @@ class LifecycleDefinition:
     shutdown: tuple[LifecycleHook, ...] = field(default=(), converter=_normalize_shutdown_hooks)
 
 
-def _normalize_routes(values: Iterable[RouteDefinition]) -> tuple[RouteDefinition, ...]:
-    return _normalize_model_values(values, RouteDefinition, "routes")
+def _normalize_routes(values: object) -> tuple[RouteDefinition, ...]:
+    """Materialize route definitions and declaration-time route sources.
+
+    ``ApplicationRouter`` intentionally lives in a separate module that depends
+    on this module.  Detecting its framework-independent ``snapshot`` contract
+    structurally keeps the dependency direction one-way while allowing
+    ``ApplicationDefinition(routes=router)``.
+    """
+    if isinstance(values, RouteDefinition):
+        return (values,)
+
+    snapshot = getattr(values, "snapshot", None)
+    if callable(snapshot):
+        values = snapshot()
+
+    normalized = normalize_iterable(cast("Iterable[object]", values), "routes")
+    routes: list[RouteDefinition] = []
+    for value in normalized:
+        if isinstance(value, RouteDefinition):
+            routes.append(value)
+            continue
+
+        nested_snapshot = getattr(value, "snapshot", None)
+        if not callable(nested_snapshot):
+            raise DefinitionError(
+                "application routes must contain RouteDefinition or route sources",
+            )
+        routes.extend(_normalize_routes(nested_snapshot()))
+    return tuple(routes)
 
 
 def _normalize_providers(values: Iterable[ProviderDefinition]) -> tuple[ProviderDefinition, ...]:
