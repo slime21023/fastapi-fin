@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Added
+
+- 新增 framework-independent security models、JWT issuer/verifier、immutable principal 與
+  scope/role policy。
+- 新增 `FastAPISecurity`，整合 bearer token、OAuth2 scopes、OpenAPI security metadata 與
+  401/403 response semantics。
+- 新增 `fastapi-fin[security]` optional dependency、JWT 範例與 security contract tests。
+
+## [1.0.1] - 2026-08-03
+
+### Added
+
+- 新增 framework-independent `ApplicationRouter`。
+- 支援 FastAPI-like route decorators、router prefix、tags 與 router composition。
+- `ApplicationDefinition` 建構時自動 snapshot `ApplicationRouter`，一般 assembly 不需手動
+  呼叫 `snapshot()`。
+- 完整 Task API 範例改用 `ApplicationRouter` route module。
+
 ### Changed
 
 - immutable application definitions 與 feature definitions 改用 attrs converter/validator，

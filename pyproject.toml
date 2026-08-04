@@ -1,6 +1,6 @@
 [project]
 name = "fastapi-fin"
-version = "1.0.0"
+version = "1.0.1"
 description = "Explicit application definitions and runtime extensions for FastAPI."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -9,17 +9,24 @@ dependencies = [
     "fastapi>=0.115.11",
 ]
 
+[project.optional-dependencies]
+security = [
+    "PyJWT[crypto]>=2.10,<3",
+]
+
 [dependency-groups]
 dev = [
     "bandit>=1.7",
     "httpx>=0.28.1",
     "hypothesis>=6.100",
+    "PyJWT[crypto]>=2.10,<3",
     "pre-commit>=4.0",
     "pytest>=8.0",
     "pytest-cov>=6.0",
     "pip-audit>=2.7",
     "ruff>=0.11",
     "ty>=0.0.1",
+    "zensical>=0.0.52",
 ]
 
 [build-system]

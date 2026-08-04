@@ -1,10 +1,11 @@
-"""FastAPI-Fin 1.0.0: explicit application definitions for FastAPI."""
+"""FastAPI-Fin 1.0.1: explicit application definitions for FastAPI."""
 
 from importlib import import_module
 from typing import TYPE_CHECKING
 
 from .application import (
     ApplicationDefinition,
+    ApplicationRouter,
     Endpoint,
     HttpMethod,
     Inject,
@@ -46,16 +47,33 @@ from .features import (
     interceptor,
 )
 from .runtime import ApplicationRuntime, RequestContext
+from .security import (
+    AuthenticatedPrincipal,
+    AuthenticationError,
+    AuthorizationError,
+    InsufficientScopeError,
+    InvalidTokenError,
+    JwtIssuer,
+    JwtKeyResolver,
+    JwtKeySet,
+    JwtVerifier,
+    MissingCredentialsError,
+    PrincipalPolicy,
+    SecurityDependencyError,
+    SecurityError,
+    require_roles,
+    require_scopes,
+)
 
 if TYPE_CHECKING:
-    from .adapters import FastAPIAdapter, Lifespan
+    from .adapters import Authenticator, FastAPIAdapter, FastAPISecurity, Lifespan
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 def __getattr__(name: str) -> object:
     """Load FastAPI-dependent exports only when requested."""
-    if name in {"FastAPIAdapter", "Lifespan"}:
+    if name in {"Authenticator", "FastAPIAdapter", "FastAPISecurity", "Lifespan"}:
         module = import_module(".adapters", __name__)
         value = getattr(module, name)
         globals()[name] = value
@@ -67,8 +85,13 @@ __all__ = [
     "AccessDeniedError",
     "AdapterError",
     "ApplicationDefinition",
+    "ApplicationRouter",
     "ApplicationRuntime",
     "AssemblyError",
+    "AuthenticatedPrincipal",
+    "AuthenticationError",
+    "Authenticator",
+    "AuthorizationError",
     "CachePolicy",
     "CacheStore",
     "Configuration",
@@ -79,14 +102,23 @@ __all__ = [
     "EventSubscription",
     "FastAPIAdapter",
     "FastAPIFinError",
+    "FastAPISecurity",
     "GuardDefinition",
     "GuardPredicate",
     "HttpMethod",
     "Inject",
+    "InsufficientScopeError",
     "InterceptorDefinition",
     "InterceptorHandler",
+    "InvalidTokenError",
+    "JwtIssuer",
+    "JwtKeyResolver",
+    "JwtKeySet",
+    "JwtVerifier",
     "LifecycleDefinition",
     "Lifespan",
+    "MissingCredentialsError",
+    "PrincipalPolicy",
     "ProviderDefinition",
     "ProviderFactory",
     "RequestContext",
@@ -94,6 +126,8 @@ __all__ = [
     "RouteDefinition",
     "RuntimeClosedError",
     "Scope",
+    "SecurityDependencyError",
+    "SecurityError",
     "ServiceToken",
     "SettingDefinition",
     "__version__",
@@ -104,5 +138,7 @@ __all__ = [
     "inject",
     "interceptor",
     "provide",
+    "require_roles",
+    "require_scopes",
     "route",
 ]

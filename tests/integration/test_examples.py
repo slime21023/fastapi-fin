@@ -20,6 +20,7 @@ EXAMPLE_SCRIPTS = tuple(
         "08_events_and_cache.py",
         "09_complete_pipeline.py",
         "10_validation_failures.py",
+        "11_security_jwt.py",
     )
 )
 

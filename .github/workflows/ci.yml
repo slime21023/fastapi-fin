@@ -75,7 +75,11 @@ jobs:
           uv run --no-sync python examples/08_events_and_cache.py
           uv run --no-sync python examples/09_complete_pipeline.py
           uv run --no-sync python examples/10_validation_failures.py
+          uv run --no-sync python examples/11_security_jwt.py
           uv run --no-sync python -m examples.complete_app
+
+      - name: Build documentation
+        run: uv run --no-sync zensical build --strict
 
       - name: Build package
         run: uv build

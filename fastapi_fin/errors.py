@@ -1,4 +1,4 @@
-"""Public error types for FastAPI-Fin 1.0.0."""
+"""Public error types for FastAPI-Fin 1.0.1."""
 
 
 class FastAPIFinError(Exception):

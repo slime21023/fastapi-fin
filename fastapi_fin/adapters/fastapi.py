@@ -1,4 +1,4 @@
-"""FastAPI boundary for the 1.0.0 application model."""
+"""FastAPI boundary for the 1.0.1 application model."""
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -33,7 +33,7 @@ class FastAPIAdapter:
         definition: ApplicationDefinition,
         *,
         title: str = "FastAPI-Fin application",
-        version: str = "1.0.0",
+        version: str = "1.0.1",
         description: str = "",
         lifespan: Lifespan | None = None,
     ) -> FastAPI:
