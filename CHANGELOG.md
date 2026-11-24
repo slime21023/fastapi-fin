@@ -1,14 +1,11 @@
 # Changelog
 
-## Unreleased
+## [2.0.0]
 
-### Added
-
-- 新增 framework-independent security models、JWT issuer/verifier、immutable principal 與
-  scope/role policy。
-- 新增 `FastAPISecurity`，整合 bearer token、OAuth2 scopes、OpenAPI security metadata 與
-  401/403 response semantics。
-- 新增 `fastapi-fin[security]` optional dependency、JWT 範例與 security contract tests。
+- 以 Dishka 取代自建 DI runtime。`Module` 宣告 `exports`／`requires`；`Application` 組裝產品與測試依賴。`with_overrides()` 可替換已匯出的契約。
+- 在原生 FastAPI app 上以 `FastAPIIntegration.lifespan` 和 `Inject[T]` 啟用 DI，不需自訂 router、middleware 或 endpoint 包裝。
+- 保留 JWT 與 principal policy；`FastAPISecurity` 現在由 `TokenAuthenticator` 契約取得認證實作，仍使用原生 OAuth2 scopes 與 HTTP 401／403。
+- 移除 1.x 的 application definition、router、runtime、Guard、Interceptor、Events、Config 與 Cache，不保留相容性轉接層。
 
 ## [1.0.1] - 2026-08-03
 

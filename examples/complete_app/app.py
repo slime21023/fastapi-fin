@@ -37,9 +37,7 @@ def run_demo() -> None:
     with TestClient(create_app(application)) as client:
         empty = client.get("/tasks")
         missing = client.post("/tasks", json=payload)
-        invalid = client.post(
-            "/tasks", json=payload, headers={"Authorization": "Bearer not-a-jwt"}
-        )
+        invalid = client.post("/tasks", json=payload, headers={"Authorization": "Bearer not-a-jwt"})
         forbidden = client.post(
             "/tasks", json=payload, headers={"Authorization": f"Bearer {user_token}"}
         )

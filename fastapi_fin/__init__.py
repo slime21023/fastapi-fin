@@ -1,52 +1,11 @@
-"""FastAPI-Fin 1.0.1: explicit application definitions for FastAPI."""
+"""FastAPI-Fin 2.0.0: contract-first dishka dependency injection for FastAPI."""
 
 from importlib import import_module
 from typing import TYPE_CHECKING
 
-from .application import (
-    ApplicationDefinition,
-    ApplicationRouter,
-    Endpoint,
-    HttpMethod,
-    Inject,
-    LifecycleDefinition,
-    ProviderDefinition,
-    ProviderFactory,
-    RouteDefinition,
-    Scope,
-    ServiceToken,
-    assemble,
-    inject,
-    provide,
-    route,
-)
-from .errors import (
-    AccessDeniedError,
-    AdapterError,
-    AssemblyError,
-    DefinitionError,
-    FastAPIFinError,
-    ResolutionError,
-    RuntimeClosedError,
-)
-from .features import (
-    CachePolicy,
-    CacheStore,
-    Configuration,
-    EventBus,
-    EventHandler,
-    EventSubscription,
-    GuardDefinition,
-    GuardPredicate,
-    InterceptorDefinition,
-    InterceptorHandler,
-    SettingDefinition,
-    enforce_guards,
-    execute_interceptors,
-    guard,
-    interceptor,
-)
-from .runtime import ApplicationRuntime, RequestContext
+from .container import build_container, open_container
+from .errors import AdapterError, AssemblyError, DefinitionError, FastAPIFinError
+from .modules import Application, Module
 from .security import (
     AuthenticatedPrincipal,
     AuthenticationError,
@@ -61,19 +20,20 @@ from .security import (
     PrincipalPolicy,
     SecurityDependencyError,
     SecurityError,
+    TokenAuthenticator,
     require_roles,
     require_scopes,
 )
 
 if TYPE_CHECKING:
-    from .adapters import Authenticator, FastAPIAdapter, FastAPISecurity, Lifespan
+    from .adapters import CONTAINER_STATE_KEY, FastAPIIntegration, FastAPISecurity, Inject
 
-__version__ = "1.0.1"
+__version__ = "2.0.0"
 
 
 def __getattr__(name: str) -> object:
     """Load FastAPI-dependent exports only when requested."""
-    if name in {"Authenticator", "FastAPIAdapter", "FastAPISecurity", "Lifespan"}:
+    if name in {"CONTAINER_STATE_KEY", "FastAPIIntegration", "FastAPISecurity", "Inject"}:
         module = import_module(".adapters", __name__)
         value = getattr(module, name)
         globals()[name] = value
@@ -82,63 +42,33 @@ def __getattr__(name: str) -> object:
 
 
 __all__ = [
-    "AccessDeniedError",
+    "CONTAINER_STATE_KEY",
     "AdapterError",
-    "ApplicationDefinition",
-    "ApplicationRouter",
-    "ApplicationRuntime",
+    "Application",
     "AssemblyError",
     "AuthenticatedPrincipal",
     "AuthenticationError",
-    "Authenticator",
     "AuthorizationError",
-    "CachePolicy",
-    "CacheStore",
-    "Configuration",
     "DefinitionError",
-    "Endpoint",
-    "EventBus",
-    "EventHandler",
-    "EventSubscription",
-    "FastAPIAdapter",
     "FastAPIFinError",
+    "FastAPIIntegration",
     "FastAPISecurity",
-    "GuardDefinition",
-    "GuardPredicate",
-    "HttpMethod",
     "Inject",
     "InsufficientScopeError",
-    "InterceptorDefinition",
-    "InterceptorHandler",
     "InvalidTokenError",
     "JwtIssuer",
     "JwtKeyResolver",
     "JwtKeySet",
     "JwtVerifier",
-    "LifecycleDefinition",
-    "Lifespan",
     "MissingCredentialsError",
+    "Module",
     "PrincipalPolicy",
-    "ProviderDefinition",
-    "ProviderFactory",
-    "RequestContext",
-    "ResolutionError",
-    "RouteDefinition",
-    "RuntimeClosedError",
-    "Scope",
     "SecurityDependencyError",
     "SecurityError",
-    "ServiceToken",
-    "SettingDefinition",
+    "TokenAuthenticator",
     "__version__",
-    "assemble",
-    "enforce_guards",
-    "execute_interceptors",
-    "guard",
-    "inject",
-    "interceptor",
-    "provide",
+    "build_container",
+    "open_container",
     "require_roles",
     "require_scopes",
-    "route",
 ]

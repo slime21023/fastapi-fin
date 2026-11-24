@@ -1,127 +1,58 @@
 # FastAPI-Fin
 
-FastAPI-Fin 1.0.1 是一個以 FastAPI 為宿主的應用程式組裝擴展。它提供明確的 route
-definition、provider lifecycle、request context、Guard 與 Interceptor，同時保留
-FastAPI 的路由、OpenAPI、Pydantic validation 與 ASGI lifespan 行為。
+FastAPI-Fin 2.0 是 FastAPI 的 contract-first 依賴注入擴充。先定義服務介面，再由 Dishka provider 綁定實作；FastAPI 繼續負責路由、Pydantic 驗證與 OpenAPI。
+
+- **模組契約**：以 `Module.exports` 公開契約、以 `Module.requires` 宣告跨模組依賴；組裝時驗證依賴圖。
+- **原生 FastAPI**：以 `Inject[T]` 和 lifespan 整合。不需 middleware、專用 route class 或 endpoint decorator。
+- **可隔離測試**：以 `Application.with_overrides()` 在新容器替換契約；worker 與測試可直接使用 `open_container()`。
+- **直接使用 Dishka**：以原生 `Provider`、`provide`、`Scope` 宣告建構、作用域和清理。
 
 ## 快速開始
 
-```python
-from fastapi_fin.adapters import FastAPIAdapter
-from fastapi_fin.application import ApplicationDefinition, route
-
-
-def get_user(user_id: int) -> dict[str, int]:
-    return {"user_id": user_id}
-
-
-definition = ApplicationDefinition(
-    routes=(route("/users/{user_id}", get_user),),
-)
-app = FastAPIAdapter.create_app(definition, title="My application")
-```
-
-如果只需要把無 runtime 狀態的 routes 掛載到既有 FastAPI app：
+`pip install fastapi-fin`。以下可存為 `main.py`，再以 `uvicorn main:app` 啟動（需另裝 Uvicorn）。
 
 ```python
+from typing import Protocol
+
+from dishka import Provider, Scope, provide
 from fastapi import FastAPI
 
-app = FastAPI()
-FastAPIAdapter.mount(app, definition)
+from fastapi_fin import Application, FastAPIIntegration, Inject, Module
+
+
+class Message(Protocol):
+    def text(self) -> str: ...
+
+
+class Hello:
+    def text(self) -> str:
+        return "hello"
+
+
+class Messages(Provider):
+    message = provide(Hello, provides=Message, scope=Scope.APP)
+
+
+services = Application((Module("messages", providers=(Messages(),), exports=(Message,)),))
+app = FastAPI(lifespan=FastAPIIntegration(services).lifespan)
+
+
+@app.get("/")
+def hello(message: Inject[Message]) -> dict[str, str]:
+    return {"message": message.text()}
 ```
 
-也可以使用接近 FastAPI `APIRouter` 的 route module：
+## 組裝邊界
 
-```python
-from fastapi_fin.application import ApplicationDefinition, ApplicationRouter
-
-router = ApplicationRouter(prefix="/users", tags=("users",))
-
-
-@router.get("/{user_id}")
-def get_user(user_id: int) -> dict[str, int]:
-    return {"user_id": user_id}
-
-
-definition = ApplicationDefinition(routes=router)
+```mermaid
+flowchart LR
+    Module["Module：exports / requires"] --> Application["Application"]
+    Application --> Build["build_container：Dishka"]
+    Build --> Adapter["FastAPIIntegration：lifespan / Inject"]
+    Build --> Worker["Worker / script"]
 ```
 
-包含 providers 或 lifecycle hooks 的 definition 必須使用 `create_app()`，由 Adapter
-統一管理 startup、request context 與 shutdown。
+2.0 與 1.x 不相容。以原生 FastAPI router 與 lifespan 取代舊 Application/Adapter；以 Dishka 取代原 DI runtime。JWT 與 principal policy 保留，認證實作以 `TokenAuthenticator` 契約組裝。Guard、Interceptor、Events、Config、Cache 已移除。
 
-## DI
+[使用文件](docs/index.md) · [可執行範例](examples/README.md) · [開發指南](CONTRIBUTING.md)
 
-Provider 使用明確 dependency list，不依賴 runtime annotation graph 推導：
-
-```python
-from fastapi_fin.application import Scope, inject, provide
-
-
-class Database:
-    pass
-
-
-class UserService:
-    def __init__(self, database: Database) -> None:
-        self.database = database
-
-
-definition = ApplicationDefinition(
-    routes=(route("/users", list_users),),
-    providers=(
-        provide(Database, scope=Scope.APPLICATION, eager=True),
-        provide(UserService, dependencies=(Database,)),
-    ),
-)
-```
-
-Endpoint 參數可用 `inject()` 取得 provider：
-
-```python
-def list_users(service: UserService = inject(UserService)) -> list[str]:
-    return ["example"]
-```
-
-1.0.1 只有 `APPLICATION` 與 `REQUEST` 兩種 scope。Application model 會在啟動前驗證
-missing provider、circular dependency 與 scope violation。
-
-## 架構
-
-```text
-ApplicationDefinition
-        │
-        ▼
-ApplicationModel（immutable、內部模型）
-        │
-        ├── ApplicationRuntime
-        └── FastAPIAdapter
-```
-
-- `fastapi_fin.application`：definition、assembly 與 immutable model，不依賴 FastAPI。
-- `fastapi_fin.runtime`：application runtime、provider resolver、request context。
-- `fastapi_fin.features`：Guard、Interceptor、Events、Config 與 Cache 等獨立功能。
-- `fastapi_fin.adapters`：唯一接觸 FastAPI 的 boundary。
-
-Definition 是宣告；Model 是驗證後的結構；Runtime 是可變的執行狀態。Adapter 不會在
-request time 重新編譯 route 或 provider graph。
-
-## 開發
-
-```powershell
-uv sync --locked
-uv run ruff format --check .
-uv run ruff check .
-uv run ty check
-uv run pytest
-uv run bandit -q -r fastapi_fin
-uv run zensical build --strict
-uv build
-```
-
-完整使用文件位於 [docs/index.md](docs/index.md)，範例位於 [examples/README.md](examples/README.md)。
-
-本地預覽文件站點：
-
-```powershell
-uv run zensical serve
-```

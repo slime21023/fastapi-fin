@@ -65,17 +65,12 @@ jobs:
 
       - name: Run examples
         run: |
-          uv run --no-sync python examples/01_minimal_routes.py
-          uv run --no-sync python examples/02_dependency_injection.py
-          uv run --no-sync python examples/03_guard_and_interceptor.py
-          uv run --no-sync python examples/04_lifecycle_events.py
-          uv run --no-sync python examples/05_request_response.py
-          uv run --no-sync python examples/06_scopes_and_cleanup.py
-          uv run --no-sync python examples/07_configuration.py
-          uv run --no-sync python examples/08_events_and_cache.py
-          uv run --no-sync python examples/09_complete_pipeline.py
-          uv run --no-sync python examples/10_validation_failures.py
-          uv run --no-sync python examples/11_security_jwt.py
+          uv run --no-sync python examples/01_modules_and_contracts.py
+          uv run --no-sync python examples/02_scopes_and_finalization.py
+          uv run --no-sync python examples/03_testing_overrides.py
+          uv run --no-sync python examples/04_without_fastapi.py
+          uv run --no-sync python examples/05_validation_failures.py
+          uv run --no-sync python examples/06_security_jwt.py
           uv run --no-sync python -m examples.complete_app
 
       - name: Build documentation

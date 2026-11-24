@@ -30,18 +30,14 @@ verifier = JwtVerifier(
     issuer="https://issuer.example",
     audience="task-api",
 )
+
+token = issuer.issue("user-1", scopes=("tasks:read",), roles=("admin",))
+principal = verifier.authenticate(token)
 ```
 
-`JwtVerifier` 會明確驗證：
+依預設，`JwtVerifier` 會驗證簽章與演算法允許清單、`iss`、`aud`、時間宣告 `exp` 與 `iat`、身分欄位 `sub`、token ID `jti`，以及 header 的 `typ`（預設 `at+jwt`）。對稱式演算法的簽發與驗證使用相同密鑰；不要從 token header 決定允許的演算法，也不要把 JWT 當成加密資料。
 
-- signature algorithm allowlist
-- `iss`、`aud`
-- `exp`、`iat`、`sub`、`jti`
-- JWT `typ`
-- signature key
-
-不要依賴 token header 自己宣告的 algorithm，也不要把 JWT 當成加密資料。多服務部署
-建議使用非對稱簽章與 JWKS；本地 key rotation 可以使用 immutable `JwtKeySet`：
+若多個服務只需要驗證而不應持有簽發私鑰，可使用非對稱簽章：簽發端持有私鑰，驗證端持有受信任的公鑰。本地金鑰輪替可以使用不可變的 `JwtKeySet`：
 
 ```python
 from fastapi_fin.security import JwtKeySet, JwtVerifier
@@ -63,74 +59,67 @@ verifier = JwtVerifier(
 
 `kid` 只會在已設定的 trusted key set 中查找，不會依照 token 內的 URL 自動抓取外部
 資源。
+若使用這個 RS256 verifier，簽發端也要使用 `RS256`，並以對應的私鑰和 `key_id` 建立 `JwtIssuer`；此 verifier 無法驗證上面以 HS256 簽發的 token。
 
-## FastAPI bearer 與 scopes
+## 將認證合約接到 FastAPI
 
-`FastAPISecurity` 將 framework-independent verifier 接到 FastAPI `Security` dependency，
-同時保留 OpenAPI security scheme：
+`JwtVerifier` 已符合 `TokenAuthenticator` 合約。用 Dishka provider 提供該合約，並由模組匯出。`FastAPISecurity` 不直接接收 verifier，而是透過 `Inject[TokenAuthenticator]` 解析它。以下沿用上節選定的 `verifier`：
 
 ```python
 from typing import Annotated
 
-from fastapi_fin.adapters import FastAPISecurity
-from fastapi_fin.security import AuthenticatedPrincipal
+from dishka import Provider, Scope, provide
+from fastapi import FastAPI
 
+from fastapi_fin import Application, FastAPIIntegration, FastAPISecurity, Module
+from fastapi_fin.security import AuthenticatedPrincipal, TokenAuthenticator, require_roles
+
+
+class AuthProvider(Provider):
+    @provide(scope=Scope.APP)
+    def authenticator(self) -> TokenAuthenticator:
+        return verifier
+
+
+auth = Module(
+    name="auth",
+    providers=(AuthProvider(),),
+    exports=(TokenAuthenticator,),
+)
+integration = FastAPIIntegration(Application(modules=(auth,)))
+app = FastAPI(lifespan=integration.lifespan)
 security = FastAPISecurity(
-    verifier.authenticate,
     token_url="/token",
-    scopes={"tasks:read": "Read tasks"},
+    scopes={"tasks:read": "讀取工作"},
 )
 
 
-@router.get("/")
-def list_tasks(
+@app.get("/tasks")
+async def list_tasks(
     principal: Annotated[
         AuthenticatedPrincipal,
         security.principal_marker(scopes=("tasks:read",)),
     ],
-) -> list[TaskView]:
-    return service.list_for(principal.subject)
-```
-
-錯誤語義為：
-
-- 缺少或無效 token：`401`，附帶 `WWW-Authenticate: Bearer`
-- token 有效但 scope 不足：`403`，附帶 `insufficient_scope`
-- token 有效但 role 或 policy 不允許：`403`
-
-## Role policy 與 Guard
-
-若 authorization policy 要以 FastAPI-Fin Guard 執行，可以讓 security adapter 將已驗證
-的 principal 暫存於 request state：
-
-```python
-from fastapi_fin.security import require_roles
-
-admin_policy = require_roles("admin")
+) -> dict[str, str]:
+    return {"subject": principal.subject}
 
 
-@router.get(
-    "/admin",
-    guards=(security.guard(admin_policy),),
-)
-def admin_area(
-    principal: Annotated[AuthenticatedPrincipal, security.principal_marker()],
+@app.get("/admin")
+async def admin_area(
+    principal: AuthenticatedPrincipal = security.require(require_roles("admin")),
 ) -> dict[str, str]:
     return {"subject": principal.subject}
 ```
 
-endpoint 必須包含 `principal_marker()` 或 `security.require(...)`，確保 FastAPI 先完成
-authentication，再由 Guard 執行 authorization。
+`principal_marker()` 使用 FastAPI `Security` 依賴；有 `token_url` 時使用 OAuth2 password bearer scheme，並把宣告的 scopes 顯示在 OpenAPI 中。`token_url` 指向應用程式或身分服務實作的 token endpoint；adapter 不會建立該路由。省略 `token_url` 則使用 HTTP bearer scheme。
 
-也可以直接將 policy 做成 endpoint dependency：
+`security.require(policy)` 會先認證 bearer token，再檢查 `PrincipalPolicy`。範例中的 `/admin` 要求已驗證的 principal 具有 `admin` 角色，而 `/tasks` 要求 `tasks:read` scope。若需要資源層級授權，例如只能讀取自己建立的工作，應在應用程式查詢或服務中依據 principal 實作。
 
-```python
-@router.get("/admin")
-def admin_area(
-    principal: AuthenticatedPrincipal = security.require(admin_policy),
-) -> dict[str, str]:
-    return {"subject": principal.subject}
-```
+- 缺少或無效 token：`401`，附帶 `WWW-Authenticate: Bearer`。
+- token 有效但 scope 不足：`403`，附帶 `WWW-Authenticate` 的 `insufficient_scope` 資訊。
+- 通過 scope 檢查但角色不符：`403`。
+
+可改由其他 provider 提供同步或非同步的 `TokenAuthenticator`。預期的憑證拒絕應拋出 `AuthenticationError`（例如 `InvalidTokenError`），而非吞掉服務錯誤。未匯出 `TokenAuthenticator` 時，只要啟動驗證在路由上找到該認證依賴，lifespan 就會拋出 `AssemblyError`。
 
 ## Token lifecycle 邊界
 
@@ -145,4 +134,4 @@ def admin_area(
 需要即時撤銷時，應增加 revocation store 或採用 opaque refresh/session token，而不是
 假設 JWT 可以自行 logout。
 
-可執行範例請參考 [11_security_jwt.py](../../examples/11_security_jwt.py)。
+可執行範例請參考 [`06_security_jwt.py`](https://github.com/slime21023/fastapi-fin/blob/main/examples/06_security_jwt.py)；完整簽章、認證與授權 API 見[安全性參考](../reference/security.md)。

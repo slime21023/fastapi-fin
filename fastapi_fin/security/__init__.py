@@ -1,6 +1,7 @@
 """Framework-independent authentication and authorization primitives."""
 
 from .claims import AuthenticatedPrincipal
+from .contracts import TokenAuthenticator
 from .errors import (
     AuthenticationError,
     AuthorizationError,
@@ -27,6 +28,7 @@ __all__ = [
     "PrincipalPolicy",
     "SecurityDependencyError",
     "SecurityError",
+    "TokenAuthenticator",
     "require_roles",
     "require_scopes",
 ]

@@ -1,85 +1,85 @@
 # 安裝與第一個 App
 
-## 安裝
+FastAPI-Fin 2.0 需要 Python 3.12 以上。使用 `uv` 將套件加到專案：
 
-FastAPI-Fin 支援 Python 3.12 以上。使用 `uv` 時，可以在專案中執行：
-
-```powershell
+```console
 uv add fastapi-fin
 ```
 
-若要從原始碼閱讀或執行範例：
+## 定義服務契約並接上路由
 
-```powershell
-uv sync --locked
-```
+下例以 `UserDirectory` 描述路由所需的能力，讓路由不必知道使用者資料存在哪裡。
+Dishka 的 `@provide` 以回傳型別註冊契約，`Module.exports` 將契約公開給路由。
+路由本身仍用原生 FastAPI 宣告。
 
-## 建立 managed application
-
-`create_app()` 會建立 FastAPI app，並由 Adapter 管理 runtime 的 startup、request
-context 與 shutdown：
+將以下程式存成 `app.py`。若要執行最後的 `TestClient` 驗證，先用
+`uv add --dev httpx httpx2` 裝好不同 FastAPI 版本所需的測試客戶端。
 
 ```python
-from fastapi_fin.adapters import FastAPIAdapter
-from fastapi_fin.application import ApplicationDefinition, route
+from typing import Protocol
 
-
-def get_user(user_id: int) -> dict[str, int]:
-    return {"user_id": user_id}
-
-
-definition = ApplicationDefinition(
-    routes=(route("/users/{user_id}", get_user),),
-)
-app = FastAPIAdapter.create_app(
-    definition,
-    title="User API",
-    version="1.0.1",
-)
-```
-
-endpoint 仍然是一般 FastAPI callable。path、query、body 與 response validation 都由
-FastAPI 處理。
-
-## 掛載到既有 FastAPI app
-
-沒有 provider、`inject()` 或 lifecycle hook 時，可以使用 `mount()`：
-
-```python
-from fastapi import FastAPI
-
-from fastapi_fin.adapters import FastAPIAdapter
-
-
-app = FastAPI(title="Existing application")
-FastAPIAdapter.mount(app, definition)
-```
-
-`mount()` 只掛載 stateless routes。需要 runtime 管理的 definition 必須使用
-`create_app()`。
-
-## 兩個入口的選擇
-
-| 情境 | 使用方式 |
-| --- | --- |
-| FastAPI-Fin 管理 provider 與 lifecycle | `FastAPIAdapter.create_app()` |
-| endpoint 使用 `inject()` | `FastAPIAdapter.create_app()` |
-| 只有無狀態 routes | `FastAPIAdapter.mount()` |
-| 已有 FastAPI app，需要加入 routes | `FastAPIAdapter.mount()` |
-
-## 本地測試
-
-使用 `TestClient` 時，建議以 context manager 包住 app，確保 lifespan 與 cleanup 被執行：
-
-```python
+from dishka import Provider, Scope, provide
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from fastapi_fin import Application, FastAPIIntegration, Inject, Module
 
-with TestClient(app) as client:
-    response = client.get("/users/42")
 
-assert response.status_code == 200
+class UserDirectory(Protocol):
+    def find_name(self, user_id: int) -> str | None: ...
+
+
+class InMemoryDirectory:
+    def __init__(self, names: dict[int, str]) -> None:
+        self._names = names
+
+    def find_name(self, user_id: int) -> str | None:
+        return self._names.get(user_id)
+
+
+class UsersProvider(Provider):
+    @provide(scope=Scope.APP)
+    def directory(self) -> UserDirectory:
+        return InMemoryDirectory({42: "小林"})
+
+
+application = Application(
+    modules=(
+        Module(
+            name="users",
+            providers=(UsersProvider(),),
+            exports=(UserDirectory,),
+        ),
+    ),
+)
+
+
+def create_app(application: Application) -> FastAPI:
+    integration = FastAPIIntegration(application)
+    app = FastAPI(lifespan=integration.lifespan)
+
+    @app.get("/users/{user_id}")
+    async def get_user(user_id: int, directory: Inject[UserDirectory]) -> dict[str, str]:
+        name = directory.find_name(user_id)
+        if name is None:
+            raise HTTPException(status_code=404, detail="找不到使用者")
+        return {"name": name}
+
+    return app
+
+
+app = create_app(application)
+
+if __name__ == "__main__":
+    with TestClient(app) as client:
+        response = client.get("/users/42")
+        assert response.status_code == 200
+        assert response.json() == {"name": "小林"}
 ```
 
-下一步可以閱讀[核心概念](concepts.md)，理解 definition、assembly、runtime 與 adapter
-之間的關係。
+執行 `uv run python app.py` 驗證範例。`TestClient` 必須以 `with` 啟動，才能執行
+lifespan 並將容器傳給 HTTP 請求。`user_id` 仍由 FastAPI 解析與驗證；
+`directory` 是依賴，不是 HTTP 參數。
+
+接著可閱讀[模組與契約](modules.md)、[FastAPI 整合](fastapi.md)，或用
+[契約替換來測試](testing.md)。

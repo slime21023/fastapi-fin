@@ -1,6 +1,6 @@
 [project]
 site_name = "FastAPI-Fin"
-site_description = "Explicit application definitions and runtime extensions for FastAPI."
+site_description = "Contract-first dishka dependency injection for FastAPI."
 docs_dir = "docs"
 site_dir = "site"
 repo_url = "https://github.com/slime21023/fastapi-fin"
@@ -13,21 +13,17 @@ nav = [
     { "核心概念" = "guide/concepts.md" },
   ] },
   { "功能指南" = [
-    { "Route 與 FastAPI" = "guide/routes.md" },
-    { "Dependency Injection" = "guide/dependency-injection.md" },
-    { "Lifecycle 與資源管理" = "guide/lifecycle.md" },
-    { "Guard 與 Interceptor" = "guide/policies.md" },
+    { "模組契約" = "guide/modules.md" },
+    { "FastAPI 整合" = "guide/fastapi.md" },
+    { "作用域與資源管理" = "guide/scopes.md" },
     { "Security 與 JWT" = "guide/security.md" },
-    { "獨立功能" = "guide/features.md" },
     { "測試" = "guide/testing.md" },
   ] },
   { "API 參考" = [
-    { "Reference overview" = "reference/index.md" },
-    { "Application definitions" = "reference/application.md" },
-    { "Runtime" = "reference/runtime.md" },
-    { "FastAPI adapter" = "reference/adapters.md" },
+    { "API 一覽" = "reference/index.md" },
+    { "Modules 與 Container" = "reference/modules.md" },
+    { "FastAPI 整合" = "reference/fastapi.md" },
     { "Security 與 JWT" = "reference/security.md" },
-    { "Features" = "reference/features.md" },
     { "Errors" = "reference/errors.md" },
   ] },
   { "範例" = "examples/index.md" },

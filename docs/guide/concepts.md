@@ -1,102 +1,35 @@
 # 核心概念
 
-FastAPI-Fin 將「描述應用程式」與「執行應用程式」分開。使用者主要撰寫 definition，
-Adapter 與 runtime 負責把 definition 轉成可執行的 FastAPI application。
+FastAPI-Fin 以 Dishka 組裝服務，讓模組透過明確的契約合作；HTTP 層仍使用原生
+FastAPI。服務契約描述程式碼如何取得與使用物件，不是描述 HTTP 請求與回應的
+OpenAPI 契約。
 
-## 四個主要名詞
-
-### Definition
-
-`ApplicationDefinition` 是使用者撰寫的應用程式宣告，內容包括：
-
-- routes
-- providers
-- application-level guards
-- application-level interceptors
-- lifecycle hooks
-
-definition 使用 attrs 建立 immutable snapshot。輸入會在建立時正規化與驗證。
-
-`ApplicationRouter` 是 route module 的 declaration-time builder。它可以使用
-FastAPI-like decorator 收集 routes。建立 `ApplicationDefinition` 時會自動取得
-immutable snapshot；它不是 request-time registry。
-
-### Assembly
-
-`assemble()` 會檢查多個 definition 之間的關係，包括：
-
-- 重複的 method/path
-- 重複的 provider token
-- provider 依賴不存在
-- circular dependency
-- application provider 依賴 request provider
-- endpoint injection 找不到 provider
-
-錯誤會在 application 啟動前提出，而不是等到 request 才發現。
-
-### Runtime
-
-`ApplicationRuntime` 保存一個 application 的可變執行狀態：
-
-- application-scoped provider instance
-- request-scoped provider instance
-- provider disposer
-- runtime startup/shutdown state
-
-runtime 只應由 Adapter 或需要直接測試核心行為的程式碼管理。
-
-### Adapter
-
-`FastAPIAdapter` 是唯一負責 FastAPI 整合的邊界。它會：
-
-- 將 routes 加入 FastAPI router
-- 將 `inject()` 轉換成 FastAPI `Depends`
-- 保留 endpoint signature 與 OpenAPI metadata
-- 將 Guard rejection 轉成 HTTP 403
-- 管理 FastAPI lifespan 與 runtime cleanup
-
-## 執行流程
+## 從宣告到執行
 
 ```text
-ApplicationDefinition
-        ↓
-assemble()
-        ↓
-ApplicationModel（內部 immutable model）
-        ↓
-ApplicationRuntime + FastAPIAdapter
-        ↓
-FastAPI request
+Module（providers、exports、requires）
+    → Application（組合模組與替身）
+    → build_container()（組裝並驗證 Dishka 依賴圖）
+        ├─ FastAPIIntegration.lifespan → HTTP 請求使用 Inject[T]
+        └─ open_container() → worker、指令稿或測試使用 await container.get(T)
 ```
 
-request 期間的主要順序是：
+| 名稱 | 責任 |
+| --- | --- |
+| 契約 | 用 `Protocol`、抽象基底類別或其他 Dishka 可識別的型別提示當作服務鍵。 |
+| `Module` | 宣告一組 Dishka providers，並用 `exports` 與 `requires` 描述跨模組介面。 |
+| `Application` | 組合模組，檢查模組名稱與匯出是否衝突，並記錄測試用替身。 |
+| `AsyncContainer` | 由 Dishka 解析依賴、依 scope 快取實例並清理資源。 |
+| `FastAPIIntegration` | 在 lifespan 開啟與關閉容器，透過 ASGI lifespan state 讓 `Inject` 存取當前 HTTP 請求的子容器。 |
 
-```text
-FastAPI validation
-        ↓
-FastAPI Depends / provider resolution
-        ↓
-Guard
-        ↓
-Interceptor chain
-        ↓
-endpoint
-        ↓
-RequestContext cleanup
-```
+## 宣告與資源生命週期
 
-因此 request body validation 與 provider resolution 會先於 Guard。若需要在 validation
-之前拒絕 request，應使用 FastAPI middleware 或其他適合的 boundary mechanism。
+`Module` 和 `Application` 是凍結的宣告；`with_overrides()` 回傳新的 `Application`，
+不修改原本的宣告。Dishka `Provider` 實例本身不會被深度凍結，應在組裝前完成其註冊。
+組裝後的容器才持有各個 scope 的實例和清理狀態。
 
-## Immutable 與 mutable 的分界
+FastAPI-Fin 不另設 provider 裝飾器，也不替換 FastAPI 的 router、路由類別或 endpoint。
+用 `Provider`、`@provide` 及 `Scope` 描述服務，再讓 `Inject[T]` 透過原生 `Depends`
+將服務帶入路由。沒有 HTTP 時，直接以 `open_container()` 管理相同的依賴圖。
 
-| 類型 | 是否可變 | 用途 |
-| --- | --- | --- |
-| `RouteDefinition` | 否 | 描述一條 route |
-| `ProviderDefinition` | 否 | 描述 provider 與依賴 |
-| `ApplicationDefinition` | 否 | 描述完整 application |
-| `ApplicationModel` | 否 | assembly 後的內部模型 |
-| `ApplicationRuntime` | 是 | 保存 application 執行狀態 |
-| `RequestContext` | 是 | 保存單一 request 的 provider state |
-
-這個分界讓 definition 可以被重複組裝與測試，而 runtime state 不會污染共享宣告。
+了解[模組邊界](modules.md)與[作用域和資源清理](scopes.md)。

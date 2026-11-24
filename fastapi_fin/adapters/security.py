@@ -1,43 +1,35 @@
 """FastAPI security boundary for framework-independent authenticators."""
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Mapping
 from inspect import isawaitable
 from typing import Any
-from uuid import uuid4
 
-from fastapi import Depends, HTTPException, Request, Security
+from fastapi import Depends, HTTPException, Security
 from fastapi.security import HTTPBearer, OAuth2PasswordBearer, SecurityScopes
 
 from ..errors import AdapterError
-from ..features.guards import GuardDefinition
 from ..security import (
     AuthenticatedPrincipal,
     AuthenticationError,
     AuthorizationError,
     InsufficientScopeError,
     PrincipalPolicy,
+    TokenAuthenticator,
 )
-
-Authenticator = Callable[
-    [str],
-    AuthenticatedPrincipal | Awaitable[AuthenticatedPrincipal],
-]
+from .fastapi import Inject
 
 
 class FastAPISecurity:
-    """Adapt a framework-independent authenticator to FastAPI dependencies."""
+    """Authenticate FastAPI dependencies using the exported token authenticator."""
 
     def __init__(
         self,
-        authenticator: Authenticator,
         *,
         token_url: str | None = None,
         scopes: Mapping[str, str] | None = None,
         scheme_name: str | None = None,
         description: str | None = None,
     ) -> None:
-        if not callable(authenticator):
-            raise AdapterError("security authenticator must be callable")
         if token_url is not None and (not isinstance(token_url, str) or not token_url.strip()):
             raise AdapterError("security token_url must be non-empty text")
         if scopes is None:
@@ -49,9 +41,7 @@ class FastAPISecurity:
             for name, summary in scopes.items()
         ):
             raise AdapterError("security scopes must map non-empty names to descriptions")
-        self.authenticator = authenticator
         self.scopes = dict(scopes)
-        self._state_attribute = f"_fastapi_fin_principal_{uuid4().hex}"
         if token_url is None:
             self.scheme = HTTPBearer(
                 auto_error=False,
@@ -96,30 +86,12 @@ class FastAPISecurity:
 
         return Depends(enforce_policy)
 
-    def guard(self, policy: PrincipalPolicy) -> GuardDefinition:
-        """Create a Guard backed by the principal authenticated by this adapter.
-
-        The endpoint must include ``principal_marker`` or ``require`` so that
-        FastAPI authenticates the request before FastAPI-Fin evaluates Guards.
-        """
-        if not isinstance(policy, PrincipalPolicy):
-            raise AdapterError("security policy must be a PrincipalPolicy")
-
-        def allows(subject: object) -> bool:
-            state = getattr(subject, "state", None)
-            principal = getattr(state, self._state_attribute, None)
-            if not isinstance(principal, AuthenticatedPrincipal):
-                return False
-            return policy.allows(principal)
-
-        return GuardDefinition(allows, name=policy.name)
-
     def _build_current_principal(self) -> Callable[..., Any]:
         scheme_dependency = Depends(self.scheme)
 
         async def resolve(
-            request: Request,
             security_scopes: SecurityScopes,
+            authenticator: Inject[TokenAuthenticator],
             credentials: Any = scheme_dependency,
         ) -> AuthenticatedPrincipal:
             token = (
@@ -130,14 +102,13 @@ class FastAPISecurity:
             if not isinstance(token, str) or not token.strip():
                 raise _authentication_error()
             try:
-                principal = self.authenticator(token)
+                principal = authenticator.authenticate(token)
                 if isawaitable(principal):
                     principal = await principal
             except AuthenticationError as error:
                 raise _authentication_error() from error
             if not isinstance(principal, AuthenticatedPrincipal):
                 raise _authentication_error()
-            setattr(request.state, self._state_attribute, principal)
             required_scopes = tuple(security_scopes.scopes)
             missing_scopes = tuple(
                 scope for scope in required_scopes if not principal.has_scope(scope)
@@ -179,4 +150,4 @@ def _authorization_error() -> HTTPException:
     return HTTPException(status_code=403, detail="forbidden")
 
 
-__all__ = ["Authenticator", "FastAPISecurity"]
+__all__ = ["FastAPISecurity"]

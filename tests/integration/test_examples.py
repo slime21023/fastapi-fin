@@ -10,17 +10,12 @@ ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_SCRIPTS = tuple(
     ROOT / "examples" / name
     for name in (
-        "01_minimal_routes.py",
-        "02_dependency_injection.py",
-        "03_guard_and_interceptor.py",
-        "04_lifecycle_events.py",
-        "05_request_response.py",
-        "06_scopes_and_cleanup.py",
-        "07_configuration.py",
-        "08_events_and_cache.py",
-        "09_complete_pipeline.py",
-        "10_validation_failures.py",
-        "11_security_jwt.py",
+        "01_modules_and_contracts.py",
+        "02_scopes_and_finalization.py",
+        "03_testing_overrides.py",
+        "04_without_fastapi.py",
+        "05_validation_failures.py",
+        "06_security_jwt.py",
     )
 )
 
@@ -36,7 +31,7 @@ def test_executable_example_runs(script: Path) -> None:
         text=True,
     )
 
-    assert result.stdout.rstrip().endswith("OK")
+    assert result.stdout.rstrip() == f"{script.stem}: OK"
 
 
 @pytest.mark.integration

@@ -1,18 +1,11 @@
-# Errors
+# 錯誤
 
-FastAPI-Fin 使用 typed exception hierarchy 區分「宣告錯誤」、「組裝錯誤」、「執行錯誤」
-與「HTTP boundary mapping」。application code 應依責任層處理錯誤，不應用一個廣泛的
-`except Exception` 把所有錯誤轉成相同 response。
-
-## Hierarchy
+## 例外階層與匯入位置
 
 ```text
 FastAPIFinError
 ├─ DefinitionError
 ├─ AssemblyError
-├─ ResolutionError
-│  └─ RuntimeClosedError
-├─ AccessDeniedError
 ├─ AdapterError
 └─ SecurityError
    ├─ SecurityDependencyError
@@ -23,134 +16,27 @@ FastAPIFinError
       └─ InsufficientScopeError
 ```
 
-所有 public error 都可以從 `fastapi_fin.errors` 取得；Security errors 也會從
-`fastapi_fin.security` re-export。
+`fastapi_fin.errors` 只匯出 `FastAPIFinError`、`DefinitionError`、`AssemblyError` 和 `AdapterError`；`SecurityError` 及其子類別由 `fastapi_fin.security` 匯出。以上名稱也可從 `fastapi_fin` 匯入。
 
-## Definition 與 assembly errors
+## 宣告、組裝與整合
 
-### `DefinitionError`
-
-代表單一 public input 或 immutable definition 欄位無效，應在 declaration time 修正：
-
-- route path、HTTP method、status code 或 metadata 無效。
-- provider token、scope、lifecycle hook 或 feature handler 無效。
-- required configuration 缺少、parser 失敗或設定名稱未知。
-- JWT issuer、algorithm、audience 或 key set 設定無效。
-
-```python
-from fastapi_fin.errors import DefinitionError
-
-try:
-    router = ApplicationRouter(prefix="not valid path")
-except DefinitionError:
-    ...
-```
-
-### `AssemblyError`
-
-代表單一 definition 都可能有效，但組合後無法形成可執行 application：
-
-- method/path route conflict。
-- duplicate provider token。
-- provider dependency 不存在。
-- circular dependency。
-- application provider 依賴 request provider。
-- endpoint injection 找不到 provider。
-
-`assemble()`、`FastAPIAdapter.create_app()` 與 `FastAPIAdapter.mount()` 都可能在 startup
-前 raise `AssemblyError`。
-
-## Runtime errors
-
-### `ResolutionError`
-
-代表 provider resolution 或 factory execution 失敗。Adapter 預設將 request-time
-injection resolution failure 映射成 generic `500 dependency resolution failed`，避免將
-內部錯誤細節傳給 client。
-
-### `RuntimeClosedError`
-
-代表 runtime 或 request context 已經關閉，或尚未啟動：
-
-- 在 `ApplicationRuntime.start()` 前呼叫 `resolve()`。
-- 在 `ApplicationRuntime.stop()` 後建立 request context。
-- 在 `RequestContext.close()` 後追蹤或解析 request provider。
-
-### Cleanup `ExceptionGroup`
-
-`ApplicationRuntime.stop()` 與 `RequestContext.close()` 會嘗試執行全部 disposers。若多個
-disposer 失敗，錯誤會合併成 `ExceptionGroup`，而不是在第一個失敗時停止 cleanup。
-
-## Authorization errors
-
-### `AccessDeniedError`
-
-framework-independent Guard predicate 回傳 `False` 時 raise。FastAPI adapter 將它映射為
-`403 forbidden`。
-
-### `AuthorizationError`
-
-已經有 authenticated principal，但 policy 不允許該操作。它不是 authentication failure，
-在 FastAPI boundary 映射為 `403`。
-
-### `InsufficientScopeError`
-
-`PrincipalPolicy.enforce()` 發現缺少 OAuth scope 時 raise，並保存：
-
-```python
-error.required_scopes -> tuple[str, ...]
-```
-
-`FastAPISecurity` 會映射為 `403`，並加入 `WWW-Authenticate` 的
-`error="insufficient_scope"` 資訊。
-
-## Security errors
-
-### `SecurityDependencyError`
-
-JWT optional dependency 未安裝時 raise。安裝方式：
-
-```powershell
-uv add "fastapi-fin[security]"
-```
-
-### `AuthenticationError`
-
-authentication layer 的基底錯誤。客製 authenticator 可以 raise 此類別，讓
-`FastAPISecurity` 統一轉成 `401`。
-
-### `MissingCredentialsError`
-
-表示 request 沒有提供 credentials。適合給 framework-independent authentication service
-使用；FastAPI adapter 會將缺少 bearer token 映射為 `401`。
-
-### `InvalidTokenError`
-
-表示 token 結構、signature、algorithm、issuer、audience、時間、type 或 claims 驗證失敗。
-不應把底層 PyJWT exception 直接暴露給 API client。
-
-## Adapter errors
-
-### `AdapterError`
-
-代表 FastAPI boundary 的設定或使用方式錯誤：
-
-- `FastAPIAdapter.mount()` 收到需要 runtime 的 definition。
-- endpoint 使用 `inject()` 卻沒有使用 `create_app()`。
-- `FastAPISecurity` 的 authenticator、token URL 或 scope metadata 無效。
-- 不支援的 adapter option。
-
-此類錯誤應在 application wiring 階段修正，不應轉成一般 request response。
-
-## Error handling boundary
-
-推薦責任分配：
-
-| Layer | 應處理 |
+| 例外 | 發生時機與處理責任 |
 | --- | --- |
-| Definition module | 修正 `DefinitionError` |
-| Assembly/wiring | 修正 `AssemblyError`、`AdapterError` |
-| Provider boundary | 記錄並處理 `ResolutionError` |
-| Authentication boundary | 將 `AuthenticationError` 轉成未洩漏細節的 `401` |
-| Authorization boundary | 將 `AccessDeniedError`、`AuthorizationError`、scope error 轉成 `403` |
-| Application shutdown | 記錄 `ExceptionGroup` 中的全部 cleanup failures |
+| `DefinitionError` | `Module`、`Application` 的欄位格式不合法，例如空模組名稱、重複合約項目或 provider 自行設定 component；也用於 `build_container()` 的無效 context 宣告，以及 JWT、policy 的無效設定。修正輸入。 |
+| `AssemblyError` | `Application` 偵測到重複模組名稱、重複匯出，或覆寫目標並未匯出；`build_container()` 偵測未滿足的 `requires`、context 與匯出衝突，或收到非 `Application` 的值。指定的 Dishka graph 例外會封裝為 `AssemblyError`，原始錯誤保留在 `__cause__`。FastAPI lifespan 也會在偵測到路由注入未匯出的合約時拋出此錯誤。修正組裝與依賴宣告。 |
+| `AdapterError` | `Inject[T]` 收到字串、`None` 或不可雜湊的合約鍵、整合物件或 lifespan 參數型別不符、啟動時偵測到 WebSocket 使用 `Inject`、請求沒有可用的容器，或安全性 adapter 設定無效。修正整合方式；這不是預期的 HTTP 認證失敗。 |
+
+容器解析與 provider factory 的執行例外不會由 FastAPI-Fin 另行封裝，也不會被轉成固定格式的 `500` 回應。直接操作容器時由呼叫端處理；在 HTTP 請求中則遵循 FastAPI 的例外處理機制。容器與 scope 的清理錯誤由 Dishka 回報。
+
+## 安全性例外
+
+| 例外 | 意義 |
+| --- | --- |
+| `SecurityDependencyError` | 使用 JWT 時無法載入 PyJWT；安裝 `fastapi-fin[security]`。這是部署問題，不是無效 token。 |
+| `AuthenticationError` | 憑證無法通過認證。客製 `TokenAuthenticator` 可用此例外表示預期的認證失敗。 |
+| `MissingCredentialsError` | 表示沒有提供憑證，供不依賴 FastAPI 的認證程式使用。 |
+| `InvalidTokenError` | 表示 token 格式、簽章或信任條件不符，或 principal 欄位無效。 |
+| `AuthorizationError` | 已認證的 principal 不符合授權政策。 |
+| `InsufficientScopeError` | 授權所需 scope 不足；`required_scopes` 是建立例外時傳入的 scope tuple。`PrincipalPolicy.enforce()` 傳入缺少的項目。 |
+
+`FastAPISecurity` 將缺少 bearer 憑證、`authenticate()` 拋出的 `AuthenticationError`，或 authenticator 未回傳 `AuthenticatedPrincipal` 的情況轉成 `401`。Adapter 偵測到 scope 不足，或 `require()` 執行 policy 拋出 `InsufficientScopeError` 時，會傳回含 `insufficient_scope` 的 `403`；其他由 policy 拋出的 `AuthorizationError` 轉成 `403`。這些映射只發生在該 adapter 的認證與授權流程，不是全域例外攔截器。詳見[安全性參考](security.md)。

@@ -1,30 +1,16 @@
 ---
 name: fastapi-fin-testing
-description: Design and review FastAPI-Fin pytest coverage using the project's unit, contract, and integration test layers; use it when adding tests for DI, Guard, Interceptor, Event, Config, metadata, Adapter behavior, lifecycle handling, or FastAPI compatibility.
+description: Design FastAPI-Fin unit, contract, and integration coverage for service composition, Dishka scopes, security, and HTTP lifecycle.
 ---
 
 # FastAPI-Fin Testing
 
-Keep most tests fast and framework-independent while reserving a small contract suite for the FastAPI Adapter. Every test should make the boundary and lifecycle assumptions in `_design.md` observable.
+Test the public service and HTTP contracts, not provider registration internals.
 
-## Test Layers
+- Unit: use ordinary pytest in `tests/unit`. Compose Dishka providers and enter scopes through `open_container()` or test a service directly with constructor injection. Do not import or start FastAPI.
+- Contract: use `with TestClient(app)` in `tests/contract` so ASGI lifespan state reaches HTTP requests. Assert resolved values, request and application scope boundaries, cleanup, validation, OpenAPI output, and 401/403 semantics as applicable.
+- Integration: mark executable application examples with `integration`. Verify application results and resource cleanup without external services.
+- To replace a service, start a fresh app with `Application.with_overrides()`. Native FastAPI dependency overrides remain available for HTTP-layer dependencies.
 
-- **Unit tests**: test metadata, DI, Guard, Interceptor, Event, and Config pure logic without importing or starting FastAPI. Cover normal behavior, invalid inputs, normalization, precedence, and immutable snapshot composition.
-- **Contract tests**: build a minimal FastAPI application and verify Adapter translation through public APIs such as `APIRouter`, `Depends`, and lifespan. Check endpoint signatures, request/response validation, dependency execution, OpenAPI output, and error translation.
-- **Integration tests**: exercise the complete startup/lifespan/request flow with a real HTTP client. Mark them `integration` and keep external services isolated behind fakes.
+Run the focused test first. Run `uv run pytest -m integration` for example changes; CI also runs the full suite with coverage.
 
-## Test Workflow
-
-1. Classify the behavior as unit, contract, or integration before writing code.
-2. Prefer Arrange–Act–Assert and focused fixtures. Use `pytest.mark.parametrize` for validation matrices and boundary values.
-3. Assert observable results and immutable replacement semantics; do not assert private implementation details.
-4. For async behavior, use async pytest support and test cancellation, ordering, and exception propagation where relevant.
-5. Add explicit tests for conflicting Guards, invalid interceptor settings, duplicate subscriptions, sensitive config masking, and FastAPI public-contract compatibility when applicable.
-6. Run the smallest relevant test first, then `uv run pytest`; use `-m "not slow and not integration"` for the fast local loop.
-
-## Naming and Markers
-
-- Put tests under `tests/`, grouped by layer or subsystem.
-- Name tests after behavior, for example `test_registering_invalid_path_fails_early`.
-- Use `@pytest.mark.integration` for end-to-end application flows and `@pytest.mark.slow` for expensive suites.
-- Keep unit tests free of `TestClient` and application startup; use contract tests for the Adapter instead.

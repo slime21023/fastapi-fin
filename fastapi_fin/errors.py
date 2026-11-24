@@ -1,4 +1,4 @@
-"""Public error types for FastAPI-Fin 1.0.1."""
+"""Public contract composition and integration errors."""
 
 
 class FastAPIFinError(Exception):
@@ -10,19 +10,7 @@ class DefinitionError(FastAPIFinError):
 
 
 class AssemblyError(FastAPIFinError):
-    """Raised when definitions cannot form a valid application model."""
-
-
-class ResolutionError(FastAPIFinError):
-    """Raised when a provider cannot be resolved."""
-
-
-class RuntimeClosedError(ResolutionError):
-    """Raised when an application or request runtime is already closed."""
-
-
-class AccessDeniedError(FastAPIFinError):
-    """Raised when a guard rejects a request."""
+    """Raised when modules cannot form a valid dependency graph."""
 
 
 class AdapterError(FastAPIFinError):
@@ -30,11 +18,8 @@ class AdapterError(FastAPIFinError):
 
 
 __all__ = [
-    "AccessDeniedError",
     "AdapterError",
     "AssemblyError",
     "DefinitionError",
     "FastAPIFinError",
-    "ResolutionError",
-    "RuntimeClosedError",
 ]

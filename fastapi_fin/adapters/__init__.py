@@ -1,6 +1,6 @@
 """FastAPI integration boundary."""
 
-from .fastapi import FastAPIAdapter, Lifespan
-from .security import Authenticator, FastAPISecurity
+from .fastapi import CONTAINER_STATE_KEY, FastAPIIntegration, Inject
+from .security import FastAPISecurity
 
-__all__ = ["Authenticator", "FastAPIAdapter", "FastAPISecurity", "Lifespan"]
+__all__ = ["CONTAINER_STATE_KEY", "FastAPIIntegration", "FastAPISecurity", "Inject"]

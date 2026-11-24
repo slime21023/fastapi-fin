@@ -2,9 +2,11 @@
 
 Security API 分成三層：
 
-1. `JwtIssuer` / `JwtVerifier`：簽發與驗證 token。
-2. `AuthenticatedPrincipal` / `PrincipalPolicy`：保存 identity、claims 與授權規則。
-3. `FastAPISecurity`：將 framework-independent authentication 接到 FastAPI `Security`。
+1. `TokenAuthenticator`：描述從 bearer token 取得 principal 的合約；`JwtIssuer` / `JwtVerifier` 提供 JWT 簽發與驗證。
+2. `AuthenticatedPrincipal` / `PrincipalPolicy`：保存身分與 claims，並描述 scope 與角色授權規則。
+3. `FastAPISecurity`：透過 `Inject[TokenAuthenticator]` 將認證接到 FastAPI `Security`。
+
+前兩層由 `fastapi_fin.security` 匯出；`FastAPISecurity` 由 `fastapi_fin.adapters` 匯出。這些公開名稱也可從 `fastapi_fin` 匯入。
 
 JWT 支援使用 optional dependency：
 
@@ -13,6 +15,17 @@ uv add "fastapi-fin[security]"
 ```
 
 未安裝 `PyJWT` 時，首次使用 issuer 或 verifier 會 raise `SecurityDependencyError`。
+
+## `TokenAuthenticator`
+
+```python
+class TokenAuthenticator(Protocol):
+    def authenticate(
+        self, token: str
+    ) -> AuthenticatedPrincipal | Awaitable[AuthenticatedPrincipal]: ...
+```
+
+`token` 是不含 `Bearer` 前綴的憑證。同步 `JwtVerifier` 已符合此合約，不須繼承。客製實作也可以回傳 awaitable；預期的憑證拒絕應拋出 `AuthenticationError` 或其子類別。
 
 ## `AuthenticatedPrincipal`
 
@@ -53,9 +66,8 @@ class JwtKeySet:
 `JwtKeySet` 是 local trusted key resolver：
 
 - key IDs 必須是非空字串。
-- keys 會被複製成 immutable mapping。
-- header 必須包含 `kid`。
-- 未知 `kid` 會 raise `InvalidTokenError`。
+- 金鑰映射必須非空，會複製成唯讀映射；金鑰 ID 去除前後空白後不得重複。
+- 缺少、無效或未知的 `kid` 會拋出 `InvalidTokenError`。
 - 不會依照 token header 的 URL、issuer 或其他值自動發出網路請求。
 
 ```python
@@ -69,6 +81,8 @@ key_set = JwtKeySet(
 
 key rotation 的切換順序通常是：先將新 public key 加入 verifier，再由 issuer 使用新的
 `key_id`，最後移除已過期 token 不再需要的舊 key。
+
+`JwtKeyResolver = Callable[[Mapping[str, object]], object]`。自訂 resolver 收到的是尚未驗證的 JWT header；只能用它選擇已受信任的金鑰，不能把內容當作身分或信任依據。
 
 ## `JwtVerifier`
 
@@ -104,11 +118,10 @@ def authenticate(self, token: str) -> AuthenticatedPrincipal: ...
 
 1. 讀取未驗證 header，只用於檢查 `alg`、`typ` 與選擇 trusted key。
 2. 用設定的 algorithm allowlist 驗證 signature。
-3. 驗證 issuer、audience、expiry、issued-at 與 required claims。
-4. 將 claims 正規化成 immutable `AuthenticatedPrincipal`。
+3. 依設定驗證 issuer、audience、時間與必備宣告。
+4. 將 claims 正規化成不可變的 `AuthenticatedPrincipal`。`token_type` 取自設定的 `expected_type`；若設定為 `None`，則不檢查 header 的 `typ`，principal 的 `token_type` 也是 `None`。
 
-任何 token 結構、signature、時間、issuer、audience、type 或 claim 錯誤都會轉成
-`InvalidTokenError`，不將底層 JWT library 的細節暴露給 HTTP client。
+不受信任的演算法、token 類型、簽章或 PyJWT 驗證失敗會以 `InvalidTokenError` 回報；principal 欄位無效也會拋出 `InvalidTokenError`。未能載入 PyJWT 則是 `SecurityDependencyError`，不是認證拒絕。
 
 ## `JwtIssuer`
 
@@ -150,8 +163,7 @@ issuer 自動產生：
 - header `typ`：`token_type`
 - header `kid`：有設定 `key_id` 時加入
 
-`scopes` 會以 OAuth scope space-delimited string 寫入 token；`roles` 會以 list 寫入。
-`additional_claims` 不能覆寫 registered claims、scope/role claims 或 `kid`。
+非空的 `scopes` 會以空白分隔字串寫入；非空的 `roles` 會以 list 寫入。`additional_claims` 不得覆寫 `iss`、`sub`、`aud`、`iat`、`exp`、`jti`、設定的 scope/role claim 名稱或 `kid`。
 
 ```python
 issuer = JwtIssuer(
@@ -193,8 +205,7 @@ policy.enforce(principal: AuthenticatedPrincipal) -> None
 - `all_roles=True` 時，`roles` 必須全部具備。
 - `all_roles=False` 時，`roles` 只需任一個符合；空 roles 視為不增加限制。
 - `allows()` 回傳 bool。
-- `enforce()` 在 scope 缺少時 raise `InsufficientScopeError`，其他拒絕 raise
-  `AuthorizationError`。
+- `enforce()` 在 scope 缺少時拋出 `InsufficientScopeError`，其 `required_scopes` 在這裡只包含缺少的 scope；其他拒絕則拋出 `AuthorizationError`。
 
 ```python
 def require_scopes(*scopes: str, name: str = "required-scopes") -> PrincipalPolicy: ...
@@ -210,15 +221,7 @@ def require_roles(
 ## `FastAPISecurity`
 
 ```python
-Authenticator = Callable[
-    [str],
-    AuthenticatedPrincipal | Awaitable[AuthenticatedPrincipal],
-]
-```
-
-```python
 FastAPISecurity(
-    authenticator: Authenticator,
     *,
     token_url: str | None = None,
     scopes: Mapping[str, str] | None = None,
@@ -227,9 +230,11 @@ FastAPISecurity(
 )
 ```
 
-`token_url` 有值時使用 FastAPI `OAuth2PasswordBearer`，並將 `scopes` 發布到 OpenAPI；
-沒有 `token_url` 時使用 `HTTPBearer`。兩者都使用 `auto_error=False`，由 adapter 統一
-產生錯誤語義。
+`token_url` 有值時使用 FastAPI `OAuth2PasswordBearer`，並將 `scopes` 發布到 OpenAPI；沒有 `token_url` 時使用 `HTTPBearer`。兩者都使用 `auto_error=False`，由 adapter 處理認證及授權回應。Adapter 不會建立 token endpoint。
+
+建構子不接收 authenticator。應用程式須以 Dishka provider 提供 `TokenAuthenticator`，在其 `Module` 宣告 `exports=(TokenAuthenticator,)`，再將該模組納入 `FastAPIIntegration` 的 `Application`。`token_url` 若非 `None`，必須是非空白文字；`scopes` 若提供，必須是非空白 scope 名稱到非空白描述的映射。設定不符時拋出 `AdapterError`。範例見[安全性指南](../guide/security.md)。
+
+`scheme` 是選用的 FastAPI bearer scheme；`scopes` 是建構時複製的 scope 說明字典；`current_principal` 是解析 bearer 憑證、注入 authenticator 並檢查 FastAPI `SecurityScopes` 的依賴 callable。一般路由使用下列兩個 marker 方法。
 
 ### `principal_marker()`
 
@@ -254,8 +259,7 @@ def list_tasks(
     return service.list_for(principal.subject)
 ```
 
-scope 必須先在 `FastAPISecurity(scopes=...)` 宣告，否則 registration 時會 raise
-`AdapterError`。
+要求的 scope 名稱必須是非空字串。若 `FastAPISecurity(scopes=...)` 提供非空映射，每個要求的 scope 都必須列在其中，否則建立 marker 時會拋出 `AdapterError`。空映射不執行名稱比對。
 
 ### `require()`
 
@@ -263,7 +267,7 @@ scope 必須先在 `FastAPISecurity(scopes=...)` 宣告，否則 registration �
 def require(self, policy: PrincipalPolicy) -> Any: ...
 ```
 
-回傳帶有 authentication 與 policy enforcement 的 FastAPI `Depends` marker：
+回傳 FastAPI `Depends` marker。它透過 `Security` 以 policy 的 scopes 取得 principal，再執行 `policy.enforce()` 並回傳同一個 principal。傳入非 `PrincipalPolicy` 值或不符合設定的 scopes，會拋出 `AdapterError`：
 
 ```python
 admin = require_roles("admin")
@@ -276,30 +280,15 @@ def admin_area(
     return {"subject": principal.subject}
 ```
 
-### `guard()`
-
-```python
-def guard(self, policy: PrincipalPolicy) -> GuardDefinition: ...
-```
-
-將 policy 轉成既有 Guard。endpoint 必須同時放置 `principal_marker()` 或
-`security.require(...)`，讓 FastAPI 在 Guard 執行前把 principal 放入 request state：
-
-```python
-@router.get("/admin", guards=(security.guard(admin),))
-def guarded_admin(
-    principal: Annotated[AuthenticatedPrincipal, security.principal_marker()],
-) -> dict[str, str]:
-    return {"subject": principal.subject}
-```
-
 ### HTTP 語義
 
 | 情況 | Status | Header |
 | --- | --- | --- |
-| 缺少或無效 bearer token | `401` | `WWW-Authenticate: Bearer` |
-| token 有效但 scope 不足 | `403` | `insufficient_scope` |
-| token 有效但 role/policy 拒絕 | `403` | 無特殊 bearer error |
+| 缺少 bearer token、認證拒絕或回傳值不是 `AuthenticatedPrincipal` | `401` | `WWW-Authenticate: Bearer` |
+| token 有效但 scope 不足 | `403` | `WWW-Authenticate: Bearer error="insufficient_scope", scope="..."` |
+| token 有效但角色或 policy 拒絕 | `403` | 無特殊 bearer header |
+
+HTTP scope 檢查所回傳的 `scope` 列出該依賴要求的 scopes，不只是缺少的項目。如果是 policy 自己拋出 `InsufficientScopeError`，adapter 使用例外內的 `required_scopes`。認證 adapter 不會把任意例外轉成 `401`；參見[錯誤](errors.md)。
 
 ## Token lifecycle 邊界
 
@@ -310,5 +299,4 @@ def guarded_admin(
 - logout 與即時 revocation store。
 - 外部 OIDC discovery 或 JWKS HTTP fetch。
 
-這些功能應由 application provider、identity service 或外部 IdP 負責，再將 trusted key
-或 authenticator 注入 FastAPI-Fin。
+這些功能應由應用程式、身分服務或外部 IdP 負責。應用程式負責為 verifier 設定已受信任的金鑰，或提供其他 `TokenAuthenticator` 實作。
