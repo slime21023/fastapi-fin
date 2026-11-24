@@ -16,7 +16,7 @@ uv run --with uvicorn uvicorn main:app
 uv run --with uvicorn uvicorn main:app --workers 2
 ```
 
-以上指令、以程式啟動的 `uvicorn.Server`，以及 `--workers 2` 都實際驗證過：服務能回應請求，並在 Uvicorn 的 lifespan 啟動階段建立容器。
+這些情境由 `tests/integration/test_uvicorn.py` 以真實的 Uvicorn 伺服器自動驗證，並在 CI 執行：單行程與 `--workers 2` 的命令列啟動、以程式啟動的 `uvicorn.Server`、優雅關閉後的資源清理，以及啟動驗證失敗。
 
 ## 啟動與關閉時發生什麼事
 
@@ -57,6 +57,6 @@ app = FastAPI(lifespan=lifespan)
 
 ## 驗證範圍
 
-- FastAPI 0.115.11 與 0.141.1，搭配 Uvicorn 0.54.0。
-- FastAPI 0.141.1，搭配 Uvicorn 0.24.0、0.27.1、0.28.1、0.29.0 與 0.54.0（以程式啟動的 `uvicorn.Server` 驗證）。
-- 在 Windows、Python 3.12 上驗證；未驗證 `--reload`、其他 ASGI 伺服器（如 Hypercorn）與 Gunicorn 的 Uvicorn worker。
+- CI 的測試矩陣（Linux；Python 3.12 與 3.13；FastAPI 0.115.11 搭配 Starlette 0.46.2，以及 FastAPI 0.141.1 搭配 Starlette 1.3.1）會以鎖定的 Uvicorn 執行這些測試。
+- 另以手動驗證過 FastAPI 0.141.1 搭配 Uvicorn 0.24.0、0.27.1、0.28.1 與 0.29.0；這些版本不在 CI 矩陣內。
+- 未驗證 `--reload`、其他 ASGI 伺服器（如 Hypercorn）與 Gunicorn 的 Uvicorn worker。

@@ -25,6 +25,7 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=6.0",
     "pip-audit>=2.7",
+    "uvicorn>=0.24",
     "ruff>=0.11",
     "ty>=0.0.1",
     "zensical>=0.0.52",
@@ -57,7 +58,7 @@ ignore = ["D105"] # Special methods are documented by their enclosing class.
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["D", "PLR2004", "S101"]
-"tests/integration/test_examples.py" = ["S603"]
+"tests/integration/*.py" = ["S603", "S607"]
 "tests/unit/security/test_jwt.py" = ["ANN401", "S105", "S106"]
 "tests/unit/test_modules.py" = ["ANN401"]
 "examples/**/*.py" = ["D", "PLR2004", "S101", "T20"]

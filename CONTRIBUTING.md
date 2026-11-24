@@ -31,6 +31,6 @@ Ruff 檢查型別註解、文件字串、函式複雜度、未使用參數、行
 
 - Unit：`tests/unit` 驗證契約、作用域與 JWT，不啟動 FastAPI。
 - Contract：`tests/contract` 使用 `with TestClient(app)` 驗證 HTTP/OpenAPI、lifespan 與認證行為。
-- Integration：`uv run pytest -m integration` 執行所有範例，確認輸出與實際結果。
+- Integration：`uv run pytest -m integration` 執行所有範例，並以真實的 Uvicorn 伺服器驗證 lifespan 的啟動、關閉與多 worker 行為（`tests/integration/test_uvicorn.py`）。CI 單獨執行這一步，其餘測試以 `-m "not integration"` 執行。
 - 更新 `docs/` 時同步更新 `zensical.toml` 導覽；以 `uv run zensical serve` 本地預覽。
 

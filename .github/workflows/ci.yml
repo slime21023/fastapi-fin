@@ -61,7 +61,10 @@ jobs:
           uv run --no-sync pip-audit --strict -r audit-requirements.txt
 
       - name: Test
-        run: uv run --no-sync pytest --cov=fastapi_fin --cov-report=term-missing --cov-fail-under=85
+        run: uv run --no-sync pytest -m "not integration" --cov=fastapi_fin --cov-report=term-missing --cov-fail-under=85
+
+      - name: Integration tests (Uvicorn lifecycle and examples)
+        run: uv run --no-sync pytest -m integration -v
 
       - name: Run examples
         run: |
