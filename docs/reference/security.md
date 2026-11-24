@@ -10,8 +10,8 @@ Security API 分成三層：
 
 JWT 支援使用 optional dependency：
 
-```powershell
-uv sync --locked --extra security
+```console
+pip install "fastapi-fin[security]"
 ```
 
 未安裝 `PyJWT` 時，首次使用 issuer 或 verifier 會 raise `SecurityDependencyError`。

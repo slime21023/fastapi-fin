@@ -1,10 +1,12 @@
 # 安裝與第一個 App
 
-FastAPI-Fin 0.9.1 需要 Python 3.12 以上，目前尚未發布。取得原始碼後，在專案根目錄安裝：
+FastAPI-Fin 0.9.1 需要 Python 3.12 以上。安裝：
 
 ```console
-uv sync --locked
+pip install fastapi-fin
 ```
+
+若使用 uv，改為 `uv add fastapi-fin`。
 
 ## 定義服務契約並接上路由
 
@@ -12,7 +14,7 @@ uv sync --locked
 Dishka 的 `@provide` 以回傳型別註冊契約，`Module.exports` 將契約公開給路由。
 路由本身仍用原生 FastAPI 宣告。
 
-將以下程式存成 `app.py`。`uv sync --locked` 已安裝範例使用的測試客戶端。
+將以下程式存成 `app.py`。最後的 `TestClient` 驗證需要 httpx；請安裝 `pip install httpx httpx2`（httpx2 供 Starlette 1.x 使用）。
 
 ```python
 from typing import Protocol
@@ -85,7 +87,8 @@ lifespan 並將容器傳給 HTTP 請求。`user_id` 仍由 FastAPI 解析與驗�
 把同一個 `app` 交給 Uvicorn：
 
 ```console
-uv run --with uvicorn uvicorn app:app
+pip install uvicorn
+uvicorn app:app
 ```
 
 `if __name__ == "__main__":` 區塊只在 `python app.py` 時執行，Uvicorn 不會執行它；容器由 lifespan 在伺服器啟動時建立，並在關閉時清理。細節見[使用 Uvicorn 啟動](deployment.md)。

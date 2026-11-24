@@ -33,8 +33,7 @@ def _load_jwt() -> ModuleType:
         return import_module("jwt")
     except ImportError as error:
         raise SecurityDependencyError(
-            "JWT support requires the security extra: "
-            "run uv sync --extra security from the source checkout",
+            'JWT support requires the security extra: pip install "fastapi-fin[security]"',
         ) from error
 
 

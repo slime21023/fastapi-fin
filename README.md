@@ -9,7 +9,13 @@ FastAPI-Fin 是 FastAPI 的 contract-first 依賴注入擴充。先定義服務�
 
 ## 快速開始
 
-目前版本為 `0.9.1`，尚未發布。取得原始碼後，在專案根目錄執行 `uv sync --locked`。以下可存為 `main.py`：
+需要 Python 3.12 以上。安裝套件與 Uvicorn：
+
+```console
+pip install fastapi-fin uvicorn
+```
+
+若使用 uv，改為 `uv add fastapi-fin uvicorn`。以下程式可存為 `main.py`：
 
 ```python
 from typing import Protocol
@@ -45,7 +51,7 @@ def hello(message: Inject[Message]) -> dict[str, str]:
 以 Uvicorn 啟動並測試：
 
 ```console
-uv run --with uvicorn uvicorn main:app
+uvicorn main:app
 curl http://127.0.0.1:8000/
 ```
 

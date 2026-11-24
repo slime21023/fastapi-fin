@@ -34,3 +34,13 @@ Ruff 檢查型別註解、文件字串、函式複雜度、未使用參數、行
 - Integration：`uv run pytest -m integration` 執行所有範例，並以真實的 Uvicorn 伺服器驗證 lifespan 的啟動、關閉與多 worker 行為（`tests/integration/test_uvicorn.py`）。CI 單獨執行這一步，其餘測試以 `-m "not integration"` 執行。
 - 更新 `docs/` 時同步更新 `zensical.toml` 導覽；以 `uv run zensical serve` 本地預覽。
 
+## 發布
+
+目前沒有自動發布的 workflow，發布步驟如下：
+
+1. 在 `pyproject.toml` 與 `fastapi_fin/__init__.py` 同步版本號（`tests/test_package.py` 會檢查），更新 `CHANGELOG.md`，執行 `uv lock`。
+2. 推送並確認 CI 全數通過。
+3. 執行 `uv build` 與 `uvx twine check dist/*`；檢查 wheel 只含 `fastapi_fin/` 與授權檔，sdist 不含 `.agents/`。
+4. 建立並推送 tag：`git tag v<版本> && git push origin v<版本>`。
+5. 以 `uv publish` 上傳（需要 PyPI token）。
+

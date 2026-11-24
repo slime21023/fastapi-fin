@@ -1,6 +1,6 @@
 # FastAPI-Fin 範例
 
-在專案根目錄執行 `uv sync --locked`，再執行：
+範例位於原始碼庫。取得原始碼後，在專案根目錄執行 `uv sync --locked`，再執行：
 
 ```powershell
 uv run python examples/01_modules_and_contracts.py

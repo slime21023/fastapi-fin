@@ -4,11 +4,32 @@ version = "0.9.1"
 description = "Contract-first dishka dependency injection for FastAPI."
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "slime21023" }]
+keywords = ["fastapi", "dishka", "dependency-injection", "contract", "modules"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
 dependencies = [
     "attrs>=25.4,<27",
     "dishka>=1.10.1,<2",
     "fastapi>=0.115.11",
 ]
+
+[project.urls]
+Homepage = "https://github.com/slime21023/fastapi-fin"
+Repository = "https://github.com/slime21023/fastapi-fin"
+Issues = "https://github.com/slime21023/fastapi-fin/issues"
+Changelog = "https://github.com/slime21023/fastapi-fin/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 security = [
@@ -32,8 +53,18 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/.agents",
+    "/.github",
+    "/.gitattributes",
+    "/.pre-commit-config.yaml",
+    "/skills-lock.json",
+    "/uv.lock",
+]
 
 [tool.uv]
 default-groups = ["dev"]

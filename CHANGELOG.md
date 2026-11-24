@@ -1,52 +1,23 @@
 # Changelog
 
-## [0.9.1] — 尚未發布
+格式參考 [Keep a Changelog](https://keepachangelog.com/)。
 
-- 以 Dishka 取代自建 DI runtime。`Module` 宣告 `exports`／`requires`；`Application` 組裝產品與測試依賴。`with_overrides()` 可替換已匯出的契約。
-- 在原生 FastAPI app 上以 `FastAPIIntegration.lifespan` 和 `Inject[T]` 啟用 DI，不需自訂 router、middleware 或 endpoint 包裝。
-- 保留 JWT 與 principal policy；`FastAPISecurity` 現在由 `TokenAuthenticator` 契約取得認證實作，仍使用原生 OAuth2 scopes 與 HTTP 401／403。
-- 移除開發版的 application definition、router、runtime、Guard、Interceptor、Events、Config 與 Cache，不保留相容性轉接層。
-- 清除舊架構殘留與未使用的開發依賴，收緊 Ruff 的型別註解、複雜度與安全檢查。
-- 驗證可搭配 Uvicorn 使用（含多 worker 與關閉時的資源清理），並新增部署指南；同步更新 README 與文件，使其與目前的 API 和行為一致。
+## [0.9.1] - 2026-11-24
 
-## 歷史開發快照 1.0.1（未發布）
+第一個公開發布的版本。
 
 ### Added
 
-- 新增 framework-independent `ApplicationRouter`。
-- 支援 FastAPI-like route decorators、router prefix、tags 與 router composition。
-- `ApplicationDefinition` 建構時自動 snapshot `ApplicationRouter`，一般 assembly 不需手動
-  呼叫 `snapshot()`。
-- 完整 Task API 範例改用 `ApplicationRouter` route module。
+- `Module` 以 `exports`／`requires` 宣告模組的公開契約與跨模組依賴；`Application` 組合模組並驗證重複的模組名稱與匯出。
+- `build_container()` 與 `open_container()` 以 Dishka 組裝容器：每個模組是獨立的 component，只能透過匯出的契約互相取用；組裝時以 Dishka 嚴格驗證依賴圖，圖錯誤以 `AssemblyError` 回報並保留原始例外為 `__cause__`。Provider、`Scope` 與資源清理直接使用 Dishka 的 API。
+- `Application.with_overrides()` 以契約為單位替換實作（APP scope 的外部實例），對 HTTP 注入、其他模組與匯出模組本身一致生效。
+- `FastAPIIntegration.lifespan` 與 `Inject[T]` 以原生 FastAPI `Depends` 注入服務：不加 middleware、不改 route class、不包裝 endpoint。啟動時掃描路由，注入未匯出的契約會拋出 `AssemblyError`，WebSocket 使用 `Inject` 會拋出 `AdapterError`。
+- 安全性：`TokenAuthenticator` 契約、`JwtIssuer`／`JwtVerifier`／`JwtKeySet`、不可變的 `AuthenticatedPrincipal` 與 `PrincipalPolicy`（`require_scopes`／`require_roles`），以及整合 OAuth2 scopes 與 HTTP 401／403 語意的 `FastAPISecurity`。JWT 支援透過 `fastapi-fin[security]` 選用安裝。
+- 與 Uvicorn 搭配使用：命令列單行程與 `--workers N`、優雅關閉後的資源清理，以及路由注入未匯出契約時拒絕啟動；詳見部署指南。
+- 使用指南、API 參考與可執行範例（含完整的 Task API）。
 
-### Changed
+### Compatibility
 
-- immutable application definitions 與 feature definitions 改用 attrs converter/validator，
-  集中 normalization 並保留 `DefinitionError` 公開錯誤語義。
-- `Configuration` 的 parsed values 改為真正的 read-only snapshot。
-- runtime 使用 attrs factory 簡化 mutable state 初始化，但保留明確 lifecycle、cleanup 與
-  concurrency 控制。
-- 新增 attrs runtime dependency 與對應的 immutable model regression tests。
-
-## 歷史開發快照 1.0.0（未發布）
-
-### Changed
-
-- 以 clean-slate 架構重寫 application assembly。
-- 以 `ApplicationDefinition` 取代 registry、controller/module metadata 與 decorator graph。
-- 以內部 immutable `ApplicationModel` 取代 compiler/compiled application terminology。
-- 以 `ApplicationRuntime` 與 `RequestContext` 取代舊版 DI runtime。
-- Provider 改為明確 dependency list，scope 收斂為 `APPLICATION` 與 `REQUEST`。
-- FastAPI Adapter 改為 `create_app()` 與 stateless `mount()` 兩個明確入口。
-- Guard、Interceptor、Events、Config 與 Cache 改成獨立 feature modules。
-- Lifecycle hooks 與 domain event bus 分離。
-- 移除所有舊版 API、舊版 exports、migration wrapper 與相容性 shim。
-- 重新建立 unit、contract 與 integration 測試。
-
-### Removed
-
-- `ApplicationRegistry`
-- `MetadataSnapshot`、`CompiledApplication` 與舊 metadata models
-- controller/module decorators 與 convenience route decorators
-- transient scope、隱式 annotation provider graph 與 `ContextVar` controller state
-- 舊版 EventDispatcher lifecycle integration
+- Python 3.12 與 3.13。
+- 已測試 FastAPI 0.115.11（Starlette 0.46.2）、0.141.1（Starlette 1.3.1）與 0.165.0；Dishka 1.10.1（宣告範圍 `>=1.10.1,<2`）；attrs 25.4.0 與目前鎖定版；PyJWT 2.10.0 與目前鎖定版。
+- CI 在 Linux 執行；Windows 於本機驗證。

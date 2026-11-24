@@ -7,13 +7,13 @@ FastAPI-Fin 只需要 ASGI lifespan，所以用 Uvicorn 啟動與一般 FastAPI 
 將[快速入門](getting-started.md)的 app 存成 `main.py`，並確定 `app = FastAPI(lifespan=FastAPIIntegration(...).lifespan)` 位於模組層級：
 
 ```console
-uv run --with uvicorn uvicorn main:app
+uvicorn main:app
 ```
 
 多個 worker 同樣可用：
 
 ```console
-uv run --with uvicorn uvicorn main:app --workers 2
+uvicorn main:app --workers 2
 ```
 
 這些情境由 `tests/integration/test_uvicorn.py` 以真實的 Uvicorn 伺服器自動驗證，並在 CI 執行：單行程與 `--workers 2` 的命令列啟動、以程式啟動的 `uvicorn.Server`、優雅關閉後的資源清理，以及啟動驗證失敗。
