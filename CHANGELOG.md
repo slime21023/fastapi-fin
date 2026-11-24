@@ -7,6 +7,7 @@
 - 保留 JWT 與 principal policy；`FastAPISecurity` 現在由 `TokenAuthenticator` 契約取得認證實作，仍使用原生 OAuth2 scopes 與 HTTP 401／403。
 - 移除開發版的 application definition、router、runtime、Guard、Interceptor、Events、Config 與 Cache，不保留相容性轉接層。
 - 清除舊架構殘留與未使用的開發依賴，收緊 Ruff 的型別註解、複雜度與安全檢查。
+- 驗證可搭配 Uvicorn 使用（含多 worker 與關閉時的資源清理），並新增部署指南；同步更新 README 與文件，使其與目前的 API 和行為一致。
 
 ## 歷史開發快照 1.0.1（未發布）
 

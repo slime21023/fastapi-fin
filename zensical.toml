@@ -16,6 +16,7 @@ nav = [
     { "模組契約" = "guide/modules.md" },
     { "FastAPI 整合" = "guide/fastapi.md" },
     { "作用域與資源管理" = "guide/scopes.md" },
+    { "使用 Uvicorn 啟動" = "guide/deployment.md" },
     { "Security 與 JWT" = "guide/security.md" },
     { "測試" = "guide/testing.md" },
   ] },

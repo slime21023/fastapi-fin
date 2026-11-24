@@ -32,7 +32,7 @@ FastAPIFinError
 
 | 例外 | 意義 |
 | --- | --- |
-| `SecurityDependencyError` | 使用 JWT 時無法載入 PyJWT；安裝 `fastapi-fin[security]`。這是部署問題，不是無效 token。 |
+| `SecurityDependencyError` | 使用 JWT 時無法載入 PyJWT；從原始碼目錄執行 `uv sync --extra security`。這是部署問題，不是無效 token。 |
 | `AuthenticationError` | 憑證無法通過認證。客製 `TokenAuthenticator` 可用此例外表示預期的認證失敗。 |
 | `MissingCredentialsError` | 表示沒有提供憑證，供不依賴 FastAPI 的認證程式使用。 |
 | `InvalidTokenError` | 表示 token 格式、簽章或信任條件不符，或 principal 欄位無效。 |

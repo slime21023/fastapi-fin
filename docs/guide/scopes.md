@@ -8,6 +8,8 @@ FastAPI 整合在 lifespan 內持有根容器，並在 HTTP 請求需要注入�
 用 `try/finally` 確保釋放資源。FastAPI-Fin 使用 `AsyncContainer`，同步工廠也可用，
 但會直接在 event loop 上執行，請勿在其中進行阻塞式 I/O。
 
+`Scope.APP` 的工廠在第一次被解析時才執行，不是在 lifespan 啟動時；若要在開始服務前建立資源，見[使用 Uvicorn 啟動](deployment.md)中的「在啟動時建立 APP 資源」。
+
 ## 不經 HTTP 使用容器
 
 `open_container()` 建立根容器，並在離開 `async with` 時關閉。worker 或指令稿可以只開一個根容器，再為每件工作開一個子容器。若直接呼叫 `build_container()`，呼叫端必須負責 `await container.close()`。

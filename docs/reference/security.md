@@ -97,7 +97,7 @@ class JwtVerifier:
     required_claims: tuple[str, ...] = ("exp", "iat", "iss", "sub", "aud")
     expected_type: str | None = "at+jwt"
     require_jti: bool = True
-    leeway: int | float = 0
+    leeway: float = 0
     scope_claim: str = "scope"
     roles_claim: str = "roles"
 ```
@@ -201,6 +201,7 @@ policy.allows(principal: AuthenticatedPrincipal) -> bool
 policy.enforce(principal: AuthenticatedPrincipal) -> None
 ```
 
+- `name` 去除前後空白後必須非空，否則拋出 `DefinitionError`。
 - `scopes` 必須全部具備。
 - `all_roles=True` 時，`roles` 必須全部具備。
 - `all_roles=False` 時，`roles` 只需任一個符合；空 roles 視為不增加限制。

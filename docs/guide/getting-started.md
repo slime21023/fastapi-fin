@@ -80,5 +80,15 @@ if __name__ == "__main__":
 lifespan 並將容器傳給 HTTP 請求。`user_id` 仍由 FastAPI 解析與驗證；
 `directory` 是依賴，不是 HTTP 參數。
 
+## 用 Uvicorn 啟動
+
+把同一個 `app` 交給 Uvicorn：
+
+```console
+uv run --with uvicorn uvicorn app:app
+```
+
+`if __name__ == "__main__":` 區塊只在 `python app.py` 時執行，Uvicorn 不會執行它；容器由 lifespan 在伺服器啟動時建立，並在關閉時清理。細節見[使用 Uvicorn 啟動](deployment.md)。
+
 接著可閱讀[模組與契約](modules.md)、[FastAPI 整合](fastapi.md)，或用
 [契約替換來測試](testing.md)。

@@ -9,7 +9,7 @@ FastAPI-Fin 是 FastAPI 的 contract-first 依賴注入擴充。先定義服務�
 
 ## 快速開始
 
-目前版本為 `0.9.1`，尚未發布。取得原始碼後，在專案根目錄執行 `uv sync --locked`。以下可存為 `main.py`，再用 `uv run --with uvicorn uvicorn main:app` 啟動。
+目前版本為 `0.9.1`，尚未發布。取得原始碼後，在專案根目錄執行 `uv sync --locked`。以下可存為 `main.py`：
 
 ```python
 from typing import Protocol
@@ -41,6 +41,15 @@ app = FastAPI(lifespan=FastAPIIntegration(services).lifespan)
 def hello(message: Inject[Message]) -> dict[str, str]:
     return {"message": message.text()}
 ```
+
+以 Uvicorn 啟動並測試：
+
+```console
+uv run --with uvicorn uvicorn main:app
+curl http://127.0.0.1:8000/
+```
+
+回應為 `{"message":"hello"}`。FastAPI-Fin 只需要 ASGI lifespan，所以與 Uvicorn（含 `--workers`）的搭配方式和一般 FastAPI app 相同；啟動、關閉與多 worker 的行為見[使用 Uvicorn 啟動](docs/guide/deployment.md)。
 
 ## 組裝邊界
 
