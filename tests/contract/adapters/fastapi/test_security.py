@@ -1,4 +1,3 @@
-import asyncio
 from typing import Annotated
 
 from dishka import Provider, Scope, provide
@@ -29,6 +28,10 @@ class AuthProvider(Provider):
             issuer="https://issuer.example",
             audience="api",
         )
+
+
+def bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 def build_security() -> tuple[JwtIssuer, FastAPISecurity, FastAPI]:
@@ -64,8 +67,8 @@ def test_fastapi_security_authenticates_bearer_and_documents_scopes() -> None:
 
     with TestClient(app) as client:
         missing = client.get("/me")
-        invalid = client.get("/me", headers={"Authorization": "Bearer invalid"})
-        valid = client.get("/me", headers={"Authorization": f"Bearer {token}"})
+        invalid = client.get("/me", headers=bearer("invalid"))
+        valid = client.get("/me", headers=bearer(token))
 
     assert missing.status_code == 401
     assert missing.headers["www-authenticate"] == "Bearer"
@@ -90,7 +93,7 @@ def test_fastapi_security_rejects_insufficient_scope_with_403() -> None:
 
     token = issuer.issue("user-1")
     with TestClient(app) as client:
-        response = client.get("/users", headers={"Authorization": f"Bearer {token}"})
+        response = client.get("/users", headers=bearer(token))
 
     assert response.status_code == 403
     assert "insufficient_scope" in response.headers["www-authenticate"]
@@ -111,8 +114,8 @@ def test_fastapi_security_require_marker_enforces_roles() -> None:
     admin_token = issuer.issue("user-1", roles=("admin",))
 
     with TestClient(app) as client:
-        forbidden = client.get("/managed", headers={"Authorization": f"Bearer {user_token}"})
-        allowed = client.get("/managed", headers={"Authorization": f"Bearer {admin_token}"})
+        forbidden = client.get("/managed", headers=bearer(user_token))
+        allowed = client.get("/managed", headers=bearer(admin_token))
 
     assert forbidden.status_code == 403
     assert allowed.status_code == 200
@@ -126,7 +129,8 @@ def test_fastapi_security_scope_descriptions_are_read_only() -> None:
         security.scopes["users:write"] = "Write users"  # ty: ignore[invalid-assignment]
 
 
-def test_fastapi_security_requires_exported_token_authenticator_at_startup() -> None:
+@pytest.mark.anyio
+async def test_fastapi_security_requires_exported_token_authenticator_at_startup() -> None:
     integration = FastAPIIntegration(Application())
     app = FastAPI(lifespan=integration.lifespan)
     security = FastAPISecurity()
@@ -137,9 +141,6 @@ def test_fastapi_security_requires_exported_token_authenticator_at_startup() -> 
     ) -> dict[str, str]:
         return {"subject": principal.subject}
 
-    async def startup() -> None:
+    with pytest.raises(AssemblyError, match=r"/me.*TokenAuthenticator.*not an exported contract"):
         async with integration.lifespan(app):
             pass
-
-    with pytest.raises(AssemblyError, match=r"/me.*TokenAuthenticator.*not an exported contract"):
-        asyncio.run(startup())

@@ -18,25 +18,37 @@ from fastapi_fin.security import (
 )
 
 KEY = "k" * 32
+ISSUER_URL = "https://issuer.example"
+AUDIENCE = "api"
+ISSUER_DEFAULTS: dict[str, Any] = {
+    "key": KEY,
+    "algorithm": "HS256",
+    "issuer": ISSUER_URL,
+    "audience": AUDIENCE,
+}
+VERIFIER_DEFAULTS: dict[str, Any] = {
+    "key": KEY,
+    "algorithms": ("HS256",),
+    "issuer": ISSUER_URL,
+    "audience": AUDIENCE,
+}
 
 
-def issuer() -> JwtIssuer:
-    return JwtIssuer(
-        key=KEY,
-        algorithm="HS256",
-        issuer="https://issuer.example",
-        audience="api",
-    )
+def issuer(**overrides: Any) -> JwtIssuer:
+    return JwtIssuer(**ISSUER_DEFAULTS | overrides)
 
 
-def verifier(**kwargs: Any) -> JwtVerifier:
-    return JwtVerifier(
-        key=KEY,
-        algorithms=("HS256",),
-        issuer="https://issuer.example",
-        audience="api",
-        **kwargs,
-    )
+def verifier(**overrides: Any) -> JwtVerifier:
+    return JwtVerifier(**VERIFIER_DEFAULTS | overrides)
+
+
+def issuer_and_verify(
+    subject: str,
+    *,
+    scopes: tuple[str, ...] = (),
+    roles: tuple[str, ...] = (),
+) -> AuthenticatedPrincipal:
+    return verifier().authenticate(issuer().issue(subject, scopes=scopes, roles=roles))
 
 
 def test_jwt_issue_and_verify_builds_immutable_principal() -> None:
@@ -46,8 +58,8 @@ def test_jwt_issue_and_verify_builds_immutable_principal() -> None:
 
     assert principal == AuthenticatedPrincipal(
         subject="user-1",
-        issuer="https://issuer.example",
-        audience=("api",),
+        issuer=ISSUER_URL,
+        audience=(AUDIENCE,),
         scopes=("users:read",),
         roles=("admin",),
         token_id=principal.token_id,
@@ -60,78 +72,56 @@ def test_jwt_issue_and_verify_builds_immutable_principal() -> None:
         setattr(principal, "subject", "other")  # noqa: B010
 
 
-def test_verifier_rejects_wrong_algorithm_issuer_audience_and_type() -> None:
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"algorithms": ("RS256",)},
+        {"issuer": "https://other.example"},
+        {"audience": "other-api"},
+        {"expected_type": "custom+jwt"},
+    ],
+    ids=["algorithm", "issuer", "audience", "type"],
+)
+def test_verifier_rejects_token_outside_trusted_settings(overrides: dict[str, Any]) -> None:
     token = issuer().issue("user-1")
 
     with pytest.raises(InvalidTokenError):
-        JwtVerifier(
-            key=KEY,
-            algorithms=("RS256",),
-            issuer="https://issuer.example",
-            audience="api",
-        ).authenticate(token)
-    with pytest.raises(InvalidTokenError):
-        JwtVerifier(
-            key=KEY,
-            algorithms=("HS256",),
-            issuer="https://other.example",
-            audience="api",
-        ).authenticate(token)
-    with pytest.raises(InvalidTokenError):
-        JwtVerifier(
-            key=KEY,
-            algorithms=("HS256",),
-            issuer="https://issuer.example",
-            audience="other-api",
-        ).authenticate(token)
-    with pytest.raises(InvalidTokenError):
-        JwtVerifier(
-            key=KEY,
-            algorithms=("HS256",),
-            issuer="https://issuer.example",
-            audience="api",
-            expected_type="custom+jwt",
-        ).authenticate(token)
+        verifier(**overrides).authenticate(token)
 
 
-def test_verifier_requires_jti_and_rejects_untrusted_key_id() -> None:
+def test_verifier_requires_jti() -> None:
     now = datetime.now(UTC)
     claims = {
-        "iss": "https://issuer.example",
+        "iss": ISSUER_URL,
         "sub": "user-1",
-        "aud": "api",
+        "aud": AUDIENCE,
         "iat": now,
         "exp": now + timedelta(minutes=5),
     }
     token = jwt.encode(claims, KEY, algorithm="HS256", headers={"typ": "at+jwt"})
+
     with pytest.raises(InvalidTokenError):
         verifier().authenticate(token)
 
-    key_set = JwtKeySet(keys={"current": KEY})
-    rotating_verifier = JwtVerifier(
-        key_resolver=key_set,
-        algorithms=("HS256",),
-        issuer="https://issuer.example",
-        audience="api",
-    )
-    rotating_issuer = JwtIssuer(
-        key=KEY,
-        algorithm="HS256",
-        issuer="https://issuer.example",
-        audience="api",
-        key_id="current",
-    )
-    rotating_token = rotating_issuer.issue("user-1")
-    assert rotating_verifier.authenticate(rotating_token).subject == "user-1"
+
+def test_verifier_resolves_rotating_keys_by_kid() -> None:
+    rotating_verifier = verifier(key=None, key_resolver=JwtKeySet(keys={"current": KEY}))
+    token = issuer(key_id="current").issue("user-1")
+
+    assert rotating_verifier.authenticate(token).subject == "user-1"
 
 
-def test_key_set_resolves_kid_and_policies_enforce_claims() -> None:
+def test_key_set_resolves_only_trusted_key_ids() -> None:
     key_set = JwtKeySet(keys={"current": KEY})
+
     assert key_set({"kid": "current"}) == KEY
     with pytest.raises(InvalidTokenError):
         key_set({"kid": "unknown"})
 
+
+def test_policies_enforce_scopes_and_roles() -> None:
     principal = issuer_and_verify("user-1", scopes=("users:read",), roles=("admin",))
+
     require_scopes("users:read").enforce(principal)
     require_roles("admin").enforce(principal)
     with pytest.raises(InsufficientScopeError):
@@ -141,28 +131,25 @@ def test_key_set_resolves_kid_and_policies_enforce_claims() -> None:
 
 
 @pytest.mark.parametrize(
-    ("factory", "value"),
+    "overrides",
     [
-        (JwtVerifier, {"key": KEY, "algorithms": 123}),
-        (JwtVerifier, {"key": KEY, "algorithms": ("HS256",), "audience": 123}),
-        (JwtVerifier, {"key": KEY, "algorithms": ("HS256",), "issuer": 123}),
-        (JwtVerifier, {"key": KEY, "algorithms": ("HS256",), "expected_type": 123}),
+        {"algorithms": 123},
+        {"audience": 123},
+        {"issuer": 123},
+        {"expected_type": 123},
     ],
+    ids=["algorithms", "audience", "issuer", "expected_type"],
 )
-def test_verifier_rejects_malformed_definition_values(factory: Any, value: dict[str, Any]) -> None:
-    kwargs = {
-        "issuer": "https://issuer.example",
-        "audience": "api",
-        **value,
-    }
+def test_verifier_rejects_malformed_definition_values(overrides: dict[str, Any]) -> None:
     with pytest.raises(DefinitionError):
-        factory(**kwargs)
+        verifier(**overrides)
 
 
 def test_policy_rejects_malformed_requirements_at_definition_time() -> None:
+    malformed_roles: Any = (123,)
+
     with pytest.raises(DefinitionError):
         require_scopes("")
-    malformed_roles: Any = (123,)
     with pytest.raises(DefinitionError):
         require_roles(*malformed_roles)
 
@@ -172,33 +159,21 @@ def test_policy_rejects_blank_name() -> None:
         require_scopes("users:read", name="  ")
 
 
-def test_issuer_normalizes_claim_inputs_and_rejects_reserved_custom_names() -> None:
+def test_issuer_normalizes_single_string_scopes_and_roles() -> None:
     token = issuer().issue("user-1", scopes="users:read", roles="admin", token_id="token-1")
+
     principal = verifier().authenticate(token)
 
     assert principal.scopes == ("users:read",)
     assert principal.roles == ("admin",)
     assert principal.token_id == "token-1"
+
+
+def test_issuer_rejects_empty_token_id_and_shared_claim_names() -> None:
     with pytest.raises(DefinitionError):
         issuer().issue("user-1", token_id="")
     with pytest.raises(DefinitionError):
-        JwtIssuer(
-            key=KEY,
-            algorithm="HS256",
-            issuer="https://issuer.example",
-            audience="api",
-            scope_claim="roles",
-            roles_claim="roles",
-        )
-
-
-def issuer_and_verify(
-    subject: str,
-    *,
-    scopes: tuple[str, ...] = (),
-    roles: tuple[str, ...] = (),
-) -> AuthenticatedPrincipal:
-    return verifier().authenticate(issuer().issue(subject, scopes=scopes, roles=roles))
+        issuer(scope_claim="roles", roles_claim="roles")
 
 
 def test_issuer_rejects_a_non_datetime_now_with_a_definition_error() -> None:
@@ -210,10 +185,4 @@ def test_issuer_rejects_a_non_datetime_now_with_a_definition_error() -> None:
 
 def test_reserved_claim_error_names_the_offending_option() -> None:
     with pytest.raises(DefinitionError, match="scope_claim cannot override a registered"):
-        JwtIssuer(
-            key=KEY,
-            algorithm="HS256",
-            issuer="https://issuer.example",
-            audience="api",
-            scope_claim="sub",
-        )
+        issuer(scope_claim="sub")

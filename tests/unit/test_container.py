@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import Iterator
 from typing import Protocol
 
@@ -43,29 +42,27 @@ class Orders(Provider):
     service = provide(OrderService, scope=Scope.APP)
 
 
+@pytest.mark.anyio
 @pytest.mark.parametrize("override", [False, True])
-def test_contract_resolution_across_components(override: bool) -> None:
-    async def scenario() -> None:
-        app = Application(
-            (
-                Module("users", (Users(),), exports=(UserDirectory, UserService)),
-                Module("orders", (Orders(),), exports=(OrderService,), requires=(UserDirectory,)),
-            )
+async def test_contract_resolution_across_components(override: bool) -> None:
+    app = Application(
+        (
+            Module("users", (Users(),), exports=(UserDirectory, UserService)),
+            Module("orders", (Orders(),), exports=(OrderService,), requires=(UserDirectory,)),
         )
-        fake = FakeDirectory()
-        async with open_container(
-            app.with_overrides({UserDirectory: fake}) if override else app
-        ) as root:
-            selected = await root.get(UserDirectory)
-            assert selected.name() == ("test" if override else "production")
-            assert (await root.get(OrderService)).directory is selected
-            assert (await root.get(UserService)).directory is selected
-            if override:
-                assert selected is fake
-            with pytest.raises(NoFactoryError):
-                await root.get(UserTable)
+    )
+    fake = FakeDirectory()
+    composed = app.with_overrides({UserDirectory: fake}) if override else app
 
-    asyncio.run(scenario())
+    async with open_container(composed) as root:
+        selected = await root.get(UserDirectory)
+        assert selected.name() == ("test" if override else "production")
+        assert (await root.get(OrderService)).directory is selected
+        assert (await root.get(UserService)).directory is selected
+        if override:
+            assert selected is fake
+        with pytest.raises(NoFactoryError):
+            await root.get(UserTable)
 
 
 def test_internal_factory_cannot_be_used_implicitly_by_another_module() -> None:
@@ -88,7 +85,8 @@ def test_export_needs_a_provider() -> None:
         build_container(Application((Module("users", exports=(UserDirectory,)),)))
 
 
-def test_requires_can_be_supplied_as_scope_context() -> None:
+@pytest.mark.anyio
+async def test_requires_can_be_supplied_as_scope_context() -> None:
     class Clock:
         pass
 
@@ -101,16 +99,14 @@ def test_requires_can_be_supplied_as_scope_context() -> None:
     with pytest.raises(AssemblyError, match=r"'current' requires .*Clock"):
         build_container(app)
 
-    async def scenario() -> None:
-        async with open_container(app, context={Clock: Scope.REQUEST}) as root:
-            clock = Clock()
-            async with root(context={Clock: clock}) as request:
-                assert await request.get(int) == id(clock)
-
-    asyncio.run(scenario())
+    async with open_container(app, context={Clock: Scope.REQUEST}) as root:
+        clock = Clock()
+        async with root(context={Clock: clock}) as request:
+            assert await request.get(int) == id(clock)
 
 
-def test_finalizes_each_scope_in_order() -> None:
+@pytest.mark.anyio
+async def test_finalizes_each_scope_in_order() -> None:
     events: list[str] = []
 
     class Resources(Provider):
@@ -128,12 +124,9 @@ def test_finalizes_each_scope_in_order() -> None:
             finally:
                 events.append("request")
 
-    async def scenario() -> None:
-        app = Application((Module("resources", (Resources(),), exports=(str,)),))
-        async with open_container(app) as root:
-            async with root() as request:
-                assert await request.get(str) == "42"
-            assert events == ["request"]
-        assert events == ["request", "app"]
-
-    asyncio.run(scenario())
+    app = Application((Module("resources", (Resources(),), exports=(str,)),))
+    async with open_container(app) as root:
+        async with root() as request:
+            assert await request.get(str) == "42"
+        assert events == ["request"]
+    assert events == ["request", "app"]

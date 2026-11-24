@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -125,8 +124,9 @@ def test_provider_exception_reaches_native_exception_handler() -> None:
     assert response.json() == {"detail": "service is offline"}
 
 
+@pytest.mark.anyio
 @pytest.mark.parametrize("location", ["endpoint", "nested", "router"])
-def test_startup_rejects_http_injection_of_unexported_contract(location: str) -> None:
+async def test_startup_rejects_http_injection_of_unexported_contract(location: str) -> None:
     class Missing:
         pass
 
@@ -152,15 +152,13 @@ def test_startup_rejects_http_injection_of_unexported_contract(location: str) ->
 
         app.include_router(router)
 
-    async def startup() -> None:
+    with pytest.raises(AssemblyError, match=r"route '/missing' injects .*Missing.*not an exported"):
         async with integration.lifespan(app):
             pass
 
-    with pytest.raises(AssemblyError, match=r"route '/missing' injects .*Missing.*not an exported"):
-        asyncio.run(startup())
 
-
-def test_startup_rejects_websocket_injection_even_for_exported_contract() -> None:
+@pytest.mark.anyio
+async def test_startup_rejects_websocket_injection_even_for_exported_contract() -> None:
     class Service:
         pass
 
@@ -176,12 +174,9 @@ def test_startup_rejects_websocket_injection_even_for_exported_contract() -> Non
     async def socket(websocket: WebSocket, _service: Inject[Service]) -> None:
         await websocket.close()
 
-    async def startup() -> None:
+    with pytest.raises(AdapterError, match="Inject is not supported on WebSocket route '/socket'"):
         async with integration.lifespan(app):
             pass
-
-    with pytest.raises(AdapterError, match="Inject is not supported on WebSocket route '/socket'"):
-        asyncio.run(startup())
 
 
 def test_request_injection_requires_integration_lifespan() -> None:
