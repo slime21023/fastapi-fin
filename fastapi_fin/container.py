@@ -24,15 +24,15 @@ from dishka import (
 from dishka.exceptions import AliasedFactoryNotFoundError, InvalidGraphError
 from dishka.provider import BaseProvider
 
-from ._validation import normalize_contract
+from ._validation import Contract, ModuleName, normalize_contract
 from .errors import AssemblyError, DefinitionError
 from .modules import Application, Module
 
-_EMPTY_CONTEXT: Mapping[object, BaseScope] = MappingProxyType({})
+_EMPTY_CONTEXT: Mapping[Contract, BaseScope] = MappingProxyType({})
 
 
 def build_container(
-    application: Application, *, context: Mapping[object, BaseScope] = _EMPTY_CONTEXT
+    application: Application, *, context: Mapping[Contract, BaseScope] = _EMPTY_CONTEXT
 ) -> AsyncContainer:
     """Validate and build a container; the caller owns its shutdown.
 
@@ -60,7 +60,7 @@ def build_container(
 
 @asynccontextmanager
 async def open_container(
-    application: Application, *, context: Mapping[object, BaseScope] = _EMPTY_CONTEXT
+    application: Application, *, context: Mapping[Contract, BaseScope] = _EMPTY_CONTEXT
 ) -> AsyncIterator[AsyncContainer]:
     """Build a container and close it when the caller exits."""
     container = build_container(application, context=context)
@@ -78,7 +78,7 @@ def _component_providers(module: Module) -> list[BaseProvider]:
     return [provider.to_component(module.name) for provider in module.providers]
 
 
-def _export_bridge(exports: Mapping[object, str]) -> Provider:
+def _export_bridge(exports: Mapping[Contract, ModuleName]) -> Provider:
     """Expose each exported contract in the default component."""
     bridge = Provider()
     for contract, owner in exports.items():
@@ -87,7 +87,7 @@ def _export_bridge(exports: Mapping[object, str]) -> Provider:
 
 
 def _import_bridges(
-    application: Application, context: Mapping[object, BaseScope]
+    application: Application, context: Mapping[Contract, BaseScope]
 ) -> list[Provider]:
     """Let each module see the contracts it requires from the default component."""
     return [
@@ -98,7 +98,7 @@ def _import_bridges(
 
 
 def _import_bridge(
-    module: Module, exports: Mapping[object, str], context: Mapping[object, BaseScope]
+    module: Module, exports: Mapping[Contract, ModuleName], context: Mapping[Contract, BaseScope]
 ) -> Provider:
     bridge = Provider(component=module.name)
     for contract in module.requires:
@@ -112,7 +112,7 @@ def _import_bridge(
 
 
 def _context_provider(
-    context: Mapping[object, BaseScope], exports: Mapping[object, str]
+    context: Mapping[Contract, BaseScope], exports: Mapping[Contract, ModuleName]
 ) -> Provider:
     provider = Provider()
     for contract, scope in context.items():
@@ -148,7 +148,7 @@ def _constant(value: object) -> Callable[[], object]:
     return factory
 
 
-def _as_type(contract: object) -> type:
+def _as_type(contract: Contract) -> type:
     """Dishka's stubs demand ``type``; contracts may be any hashable type hint."""
     return cast("type", contract)
 

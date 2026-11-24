@@ -4,9 +4,10 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from types import MappingProxyType, ModuleType
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from attrs import Attribute, define, field
+from attrs import field, frozen
 
 from .._validation import (
     bool_validator,
@@ -20,7 +21,10 @@ from ..errors import DefinitionError
 from .claims import AuthenticatedPrincipal
 from .errors import InvalidTokenError, SecurityDependencyError
 
-JwtKeyResolver = Callable[[Mapping[str, object]], object]
+if TYPE_CHECKING:
+    from attrs import Attribute
+
+type JwtKeyResolver = Callable[[Mapping[str, object]], object]
 
 _REGISTERED_CLAIMS = frozenset({"iss", "sub", "aud", "iat", "exp", "jti"})
 # RFC 9068 media type for access tokens, not a secret.
@@ -63,7 +67,7 @@ def _normalize_key_set(value: Mapping[str, object]) -> Mapping[str, object]:
     return MappingProxyType(normalized)
 
 
-def _validate_claim_name(_instance: object, attribute: Attribute, value: str) -> None:
+def _validate_claim_name(_instance: object, attribute: "Attribute[str]", value: str) -> None:
     if value in _REGISTERED_CLAIMS:
         raise DefinitionError(f"{attribute.name} cannot override a registered JWT claim")
 
@@ -91,7 +95,7 @@ def _require_distinct_claim_names(scope_claim: str, roles_claim: str) -> None:
         raise DefinitionError("JWT scope_claim and roles_claim must be different")
 
 
-@define(frozen=True, slots=True, kw_only=True)
+@frozen(kw_only=True)
 class JwtKeySet:
     """Immutable key set used for safe local key rotation by ``kid``."""
 
@@ -112,7 +116,7 @@ class JwtKeySet:
             raise InvalidTokenError("JWT key is not trusted") from error
 
 
-@define(frozen=True, slots=True, kw_only=True)
+@frozen(kw_only=True)
 class JwtVerifier:
     """Verify JWT access tokens with an explicit issuer, audience and algorithm set."""
 
@@ -189,7 +193,7 @@ class JwtVerifier:
             raise InvalidTokenError("JWT type is not trusted")
 
 
-@define(frozen=True, slots=True, kw_only=True)
+@frozen(kw_only=True)
 class JwtIssuer:
     """Issue short-lived JWT access tokens with reserved claims protected."""
 

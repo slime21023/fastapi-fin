@@ -7,20 +7,23 @@ from itertools import chain
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Annotated, Final, get_args, get_origin
 
-from attrs import define
+from attrs import frozen
 from dishka import AsyncContainer, BaseScope, Scope
 from fastapi import Depends, FastAPI, Request, routing
 from fastapi.params import Depends as DependsMarker
 from fastapi.routing import APIRoute, APIWebSocketRoute
 
-from .._validation import normalize_contract
+from .._validation import Contract, ModuleName, normalize_contract
 from ..container import open_container
 from ..errors import AdapterError, AssemblyError, DefinitionError
 from ..modules import Application
 
 CONTAINER_STATE_KEY: Final = "fastapi_fin_container"
 _REQUEST_STATE_KEY: Final = "_fastapi_fin_request_container"
-_FASTAPI_CONTEXT: Final[Mapping[object, BaseScope]] = MappingProxyType({Request: Scope.REQUEST})
+_FASTAPI_CONTEXT: Final[Mapping[Contract, BaseScope]] = MappingProxyType({Request: Scope.REQUEST})
+
+# An endpoint, a FastAPI dependency, or a class used as one.
+type DependencyCall = Callable[..., object]
 
 
 async def _request_container(request: Request) -> AsyncIterator[AsyncContainer]:
@@ -43,9 +46,9 @@ async def _request_container(request: Request) -> AsyncIterator[AsyncContainer]:
             delattr(request.state, _REQUEST_STATE_KEY)
 
 
-@define(frozen=True, slots=True)
+@frozen
 class _InjectDependency:
-    contract: object
+    contract: Contract
 
     async def __call__(
         self, container: Annotated[AsyncContainer, Depends(_request_container)]
@@ -60,7 +63,7 @@ else:
     class Inject:
         """Declare an exported contract as a native FastAPI dependency."""
 
-        def __class_getitem__(cls, contract: object) -> object:
+        def __class_getitem__(cls, contract: Contract) -> object:
             try:
                 normalize_contract(contract)
             except DefinitionError as error:
@@ -70,7 +73,7 @@ else:
             return Annotated[contract, Depends(_InjectDependency(contract))]
 
 
-@define(frozen=True, slots=True)
+@frozen
 class FastAPIIntegration:
     """Own the application container through an explicit FastAPI lifespan."""
 
@@ -90,16 +93,16 @@ class FastAPIIntegration:
             yield {CONTAINER_STATE_KEY: container}
 
 
-@define(frozen=True, slots=True)
+@frozen
 class _RouteView:
     """The parts of a FastAPI route that can declare injected dependencies."""
 
     path: str
-    calls: tuple[Callable[..., object], ...]
+    calls: tuple[DependencyCall, ...]
     is_websocket: bool
 
 
-def _validate_injections(app: FastAPI, exports: Mapping[object, str]) -> None:
+def _validate_injections(app: FastAPI, exports: Mapping[Contract, ModuleName]) -> None:
     """Fail at startup when a route injects a contract that no module exports."""
     for route, contract in _injections(app):
         if route.is_websocket:
@@ -110,12 +113,12 @@ def _validate_injections(app: FastAPI, exports: Mapping[object, str]) -> None:
             )
 
 
-def _injections(app: FastAPI) -> Iterator[tuple[_RouteView, object]]:
+def _injections(app: FastAPI) -> Iterator[tuple[_RouteView, Contract]]:
     """Yield one ``(route, contract)`` pair per ``Inject`` found on the application's routes."""
     return chain.from_iterable(map(_route_injections, _iter_route_views(app)))
 
 
-def _route_injections(route: _RouteView) -> Iterator[tuple[_RouteView, object]]:
+def _route_injections(route: _RouteView) -> Iterator[tuple[_RouteView, Contract]]:
     return ((route, contract) for contract in _injected_contracts(route))
 
 
@@ -138,8 +141,8 @@ def _iter_route_views(app: FastAPI) -> Iterator[_RouteView]:
 
 
 def _route_calls(
-    endpoint: Callable[..., object], dependencies: Iterable[DependsMarker]
-) -> tuple[Callable[..., object], ...]:
+    endpoint: DependencyCall, dependencies: Iterable[DependsMarker]
+) -> tuple[DependencyCall, ...]:
     """The endpoint plus every route-level dependency callable."""
     return (
         endpoint,
@@ -147,12 +150,12 @@ def _route_calls(
     )
 
 
-def _injected_contracts(route: _RouteView) -> Iterator[object]:
+def _injected_contracts(route: _RouteView) -> Iterator[Contract]:
     visited: set[int] = set()
     return chain.from_iterable(_collect_contracts(call, visited) for call in route.calls)
 
 
-def _collect_contracts(call: Callable[..., object], visited: set[int]) -> Iterator[object]:
+def _collect_contracts(call: DependencyCall, visited: set[int]) -> Iterator[Contract]:
     """Yield every contract injected by ``call`` or by its nested FastAPI dependencies."""
     if isinstance(call, _InjectDependency):
         yield call.contract
@@ -165,7 +168,7 @@ def _collect_contracts(call: Callable[..., object], visited: set[int]) -> Iterat
         yield from _collect_contracts(dependency, visited)
 
 
-def _parameter_dependencies(parameter: Parameter) -> Iterator[Callable[..., object]]:
+def _parameter_dependencies(parameter: Parameter) -> Iterator[DependencyCall]:
     """Yield the callables behind ``Annotated[..., Depends(...)]`` or ``= Depends(...)``."""
     annotation = parameter.annotation
     markers: list[DependsMarker] = []
@@ -183,7 +186,7 @@ def _parameter_dependencies(parameter: Parameter) -> Iterator[Callable[..., obje
             yield dependency
 
 
-def _dependency_parameters(call: Callable[..., object]) -> Iterable[Parameter]:
+def _dependency_parameters(call: DependencyCall) -> Iterable[Parameter]:
     try:
         return signature(call, eval_str=True, globals=_annotation_globals(call)).parameters.values()
     except (NameError, TypeError, ValueError, SyntaxError):
@@ -194,7 +197,7 @@ def _dependency_parameters(call: Callable[..., object]) -> Iterable[Parameter]:
             return ()
 
 
-def _annotation_globals(call: Callable[..., object]) -> dict[str, object] | None:
+def _annotation_globals(call: DependencyCall) -> dict[str, object] | None:
     """Locate the namespace where ``call``'s string annotations were written."""
     target = unwrap(call)
     if isinstance(target, type):

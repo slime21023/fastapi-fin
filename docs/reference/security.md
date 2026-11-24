@@ -30,7 +30,7 @@ class TokenAuthenticator(Protocol):
 ## `AuthenticatedPrincipal`
 
 ```python
-@define(frozen=True, slots=True)
+@frozen
 class AuthenticatedPrincipal:
     subject: str
     issuer: str
@@ -56,7 +56,7 @@ principal.has_role(role: str) -> bool
 ## `JwtKeySet`
 
 ```python
-@define(frozen=True, slots=True, kw_only=True)
+@frozen(kw_only=True)
 class JwtKeySet:
     keys: Mapping[str, object]
 
@@ -82,12 +82,12 @@ key_set = JwtKeySet(
 key rotation 的切換順序通常是：先將新 public key 加入 verifier，再由 issuer 使用新的
 `key_id`，最後移除已過期 token 不再需要的舊 key。
 
-`JwtKeyResolver = Callable[[Mapping[str, object]], object]`。自訂 resolver 收到的是尚未驗證的 JWT header；只能用它選擇已受信任的金鑰，不能把內容當作身分或信任依據。
+`type JwtKeyResolver = Callable[[Mapping[str, object]], object]`。自訂 resolver 收到的是尚未驗證的 JWT header；只能用它選擇已受信任的金鑰，不能把內容當作身分或信任依據。
 
 ## `JwtVerifier`
 
 ```python
-@define(frozen=True, slots=True, kw_only=True)
+@frozen(kw_only=True)
 class JwtVerifier:
     key: object | None = None
     key_resolver: JwtKeyResolver | None = None
@@ -126,7 +126,7 @@ def authenticate(self, token: str) -> AuthenticatedPrincipal: ...
 ## `JwtIssuer`
 
 ```python
-@define(frozen=True, slots=True, kw_only=True)
+@frozen(kw_only=True)
 class JwtIssuer:
     key: object
     algorithm: str
@@ -188,7 +188,7 @@ JWT 是 signed claims，不是 encrypted payload；不要將密碼、秘密或�
 ## `PrincipalPolicy`
 
 ```python
-@define(frozen=True, slots=True)
+@frozen
 class PrincipalPolicy:
     scopes: tuple[str, ...] = ()
     roles: tuple[str, ...] = ()

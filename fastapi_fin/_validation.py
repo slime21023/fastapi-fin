@@ -4,7 +4,10 @@ from collections.abc import Callable, Iterable
 
 from .errors import DefinitionError, FastAPIFinError
 
-AttrsValidator = Callable[[object, object, object], None]
+type AttrsValidator = Callable[[object, object, object], None]
+# A hashable type hint, such as a Protocol or class, that names a service.
+type Contract = object
+type ModuleName = str
 
 
 def normalize_iterable[ValueT](value: Iterable[ValueT], label: str) -> tuple[ValueT, ...]:
@@ -24,7 +27,7 @@ def tuple_converter[ValueT](label: str) -> Callable[[Iterable[ValueT]], tuple[Va
     return convert
 
 
-def normalize_contract(value: object) -> object:
+def normalize_contract(value: Contract) -> Contract:
     """Accept only hashable type hints as dependency contracts."""
     if isinstance(value, str) or value is None:
         raise DefinitionError("contracts must be type hints, not strings or None")

@@ -1,13 +1,13 @@
 """Framework-independent authorization policies."""
 
-from attrs import define, field
+from attrs import field, frozen
 
 from .._validation import bool_validator, text_converter, text_tuple_converter
 from .claims import AuthenticatedPrincipal
 from .errors import AuthorizationError, InsufficientScopeError
 
 
-@define(frozen=True, slots=True)
+@frozen
 class PrincipalPolicy:
     """Immutable scope and role requirements for an authenticated principal."""
 

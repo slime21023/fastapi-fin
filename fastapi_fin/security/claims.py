@@ -2,9 +2,8 @@
 
 from collections.abc import Callable, Iterable, Mapping
 from types import MappingProxyType
-from typing import cast
 
-from attrs import define, field
+from attrs import field, frozen
 
 from .._validation import normalize_text_tuple, optional_text_converter, text_converter
 from .errors import InvalidTokenError
@@ -46,19 +45,23 @@ def _optional_texts(label: str, *, split: bool = False) -> Callable[[object], tu
 
 def _freeze(value: object) -> object:
     if isinstance(value, Mapping):
-        return MappingProxyType({str(key): _freeze(item) for key, item in value.items()})
+        return _freeze_mapping(value)
     if isinstance(value, list | tuple):
         return tuple(_freeze(item) for item in value)
     return value
 
 
+def _freeze_mapping[KeyT](value: Mapping[KeyT, object]) -> Mapping[str, object]:
+    return MappingProxyType({str(key): _freeze(item) for key, item in value.items()})
+
+
 def _normalize_claims(value: Mapping[str, object]) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise InvalidTokenError("claims must be a mapping")
-    return cast("Mapping[str, object]", _freeze(value))
+    return _freeze_mapping(value)
 
 
-@define(frozen=True, slots=True)
+@frozen
 class AuthenticatedPrincipal:
     """Validated identity material made available to application code."""
 
