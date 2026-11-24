@@ -15,6 +15,10 @@ uv build
 
 Ruff 檢查型別註解、文件字串、函式複雜度、未使用參數、行長與安全規則。若框架契約或測試資料確有例外，請在最小範圍註明規則編號與原因。
 
+## 迴圈與效能
+
+除非演算法必要（例如遞迴走訪依賴樹），避免巢狀迴圈，包括巢狀 comprehension 與在迴圈內對 `tuple`／`list` 做 `in` 查詢。改用 `set`／`dict` 查詢、集合運算，或以 `itertools.chain.from_iterable` 展平後單層迭代；每層迴圈拆成有名字的小函式。
+
 ## 架構邊界
 
 - `fastapi_fin/modules.py` 驗證不可變的 module/application 宣告；provider 建好後交給 module，不再原地修改。

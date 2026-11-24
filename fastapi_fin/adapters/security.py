@@ -74,7 +74,7 @@ class FastAPISecurity:
             token = _bearer_token(credentials)
             principal = await _authenticate(authenticator, token)
             required_scopes = tuple(security_scopes.scopes)
-            if not all(principal.has_scope(scope) for scope in required_scopes):
+            if set(required_scopes).difference(principal.scopes):
                 raise _insufficient_scope_error(required_scopes)
             return principal
 

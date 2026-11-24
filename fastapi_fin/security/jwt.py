@@ -231,7 +231,7 @@ class JwtIssuer:
         }
         if additional_claims is not None:
             _merge_additional_claims(
-                claims, additional_claims, (self.scope_claim, self.roles_claim, "kid")
+                claims, additional_claims, frozenset({self.scope_claim, self.roles_claim, "kid"})
             )
         claims.update(self._scope_and_role_claims(scopes, roles))
         return _load_jwt().encode(
@@ -266,13 +266,13 @@ def _as_aware_datetime(now: datetime | None) -> datetime:
 def _merge_additional_claims(
     claims: dict[str, object],
     additional: Mapping[str, object],
-    reserved: tuple[str, ...],
+    reserved: frozenset[str],
 ) -> None:
     if not isinstance(additional, Mapping):
         raise DefinitionError("additional_claims must be a mapping")
     if not all(isinstance(name, str) and name.strip() for name in additional):
         raise DefinitionError("additional_claims keys must be non-empty strings")
-    if any(name in claims or name in reserved for name in additional):
+    if not (claims.keys() | reserved).isdisjoint(additional):
         raise DefinitionError("additional_claims cannot override reserved JWT claims")
     claims.update(additional)
 

@@ -23,13 +23,14 @@ class PrincipalPolicy:
         return not self._missing_scopes(principal) and self._has_required_roles(principal)
 
     def _missing_scopes(self, principal: AuthenticatedPrincipal) -> tuple[str, ...]:
-        return tuple(scope for scope in self.scopes if not principal.has_scope(scope))
+        granted = frozenset(principal.scopes)
+        return tuple(scope for scope in self.scopes if scope not in granted)
 
     def _has_required_roles(self, principal: AuthenticatedPrincipal) -> bool:
         if not self.roles:
             return True
-        matches = all if self.all_roles else any
-        return matches(principal.has_role(role) for role in self.roles)
+        required, granted = frozenset(self.roles), frozenset(principal.roles)
+        return required <= granted if self.all_roles else not required.isdisjoint(granted)
 
     def enforce(self, principal: AuthenticatedPrincipal) -> None:
         """Raise a typed authorization error when the policy is not satisfied."""

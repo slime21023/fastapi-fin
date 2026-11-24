@@ -1,6 +1,8 @@
 """Immutable module declarations for contract-first composition."""
 
-from collections.abc import Iterable, Mapping
+from collections import Counter
+from collections.abc import Iterable, Iterator, Mapping
+from itertools import chain, repeat
 from types import MappingProxyType
 
 from attrs import define, evolve, field
@@ -58,31 +60,31 @@ class Module:
     def __attrs_post_init__(self) -> None:
         for provider in self.providers:
             _validate_provider(self.name, provider)
-        for contract in self.requires:
-            if contract in self.exports:
-                raise DefinitionError(
-                    f"module {self.name!r} both exports and requires {contract!r}"
-                )
+        exported = frozenset(self.exports)
+        if conflict := next((item for item in self.requires if item in exported), None):
+            raise DefinitionError(f"module {self.name!r} both exports and requires {conflict!r}")
 
 
 def _index_exports(modules: tuple[Module, ...]) -> dict[object, str]:
     """Map every exported contract to its module, rejecting duplicate names and owners."""
-    module_names: set[str] = set()
+    if not all(isinstance(module, Module) for module in modules):
+        raise DefinitionError("application modules must contain Module values")
+    name_counts = Counter(module.name for module in modules)
+    if duplicate := next((name for name, count in name_counts.items() if count > 1), None):
+        raise AssemblyError(f"duplicate module name: {duplicate!r}")
     owners: dict[object, str] = {}
-    for module in modules:
-        if not isinstance(module, Module):
-            raise DefinitionError("application modules must contain Module values")
-        if module.name in module_names:
-            raise AssemblyError(f"duplicate module name: {module.name!r}")
-        module_names.add(module.name)
-        for contract in module.exports:
-            if contract in owners:
-                raise AssemblyError(
-                    f"contract {contract!r} is exported by modules "
-                    f"{owners[contract]!r} and {module.name!r}"
-                )
-            owners[contract] = module.name
+    for contract, module_name in chain.from_iterable(map(_exports_of, modules)):
+        if contract in owners:
+            raise AssemblyError(
+                f"contract {contract!r} is exported by modules "
+                f"{owners[contract]!r} and {module_name!r}"
+            )
+        owners[contract] = module_name
     return owners
+
+
+def _exports_of(module: Module) -> Iterator[tuple[object, str]]:
+    return zip(module.exports, repeat(module.name), strict=False)
 
 
 @define(frozen=True, slots=True)
@@ -97,9 +99,8 @@ class Application:
 
     def __attrs_post_init__(self) -> None:
         owners = _index_exports(self.modules)
-        for contract in self.overrides:
-            if contract not in owners:
-                raise AssemblyError(f"override target {contract!r} is not an exported contract")
+        if unknown := next((item for item in self.overrides if item not in owners), None):
+            raise AssemblyError(f"override target {unknown!r} is not an exported contract")
         object.__setattr__(self, "_exports", MappingProxyType(owners))
 
     @property

@@ -8,6 +8,7 @@ the default component into the requiring module.
 
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
+from itertools import chain
 from types import MappingProxyType
 from typing import cast
 
@@ -70,11 +71,11 @@ async def open_container(
 
 
 def _module_providers(application: Application) -> list[BaseProvider]:
-    return [
-        provider.to_component(module.name)
-        for module in application.modules
-        for provider in module.providers
-    ]
+    return list(chain.from_iterable(map(_component_providers, application.modules)))
+
+
+def _component_providers(module: Module) -> list[BaseProvider]:
+    return [provider.to_component(module.name) for provider in module.providers]
 
 
 def _export_bridge(exports: Mapping[object, str]) -> Provider:

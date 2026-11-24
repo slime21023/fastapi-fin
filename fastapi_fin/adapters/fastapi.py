@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
 from contextlib import asynccontextmanager
 from inspect import Parameter, signature, unwrap
+from itertools import chain
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Annotated, Final, get_args, get_origin
 
@@ -100,14 +101,22 @@ class _RouteView:
 
 def _validate_injections(app: FastAPI, exports: Mapping[object, str]) -> None:
     """Fail at startup when a route injects a contract that no module exports."""
-    for route in _iter_route_views(app):
-        for contract in _injected_contracts(route):
-            if route.is_websocket:
-                raise AdapterError(f"Inject is not supported on WebSocket route {route.path!r}")
-            if contract not in exports:
-                raise AssemblyError(
-                    f"route {route.path!r} injects {contract!r}, which is not an exported contract"
-                )
+    for route, contract in _injections(app):
+        if route.is_websocket:
+            raise AdapterError(f"Inject is not supported on WebSocket route {route.path!r}")
+        if contract not in exports:
+            raise AssemblyError(
+                f"route {route.path!r} injects {contract!r}, which is not an exported contract"
+            )
+
+
+def _injections(app: FastAPI) -> Iterator[tuple[_RouteView, object]]:
+    """Yield one ``(route, contract)`` pair per ``Inject`` found on the application's routes."""
+    return chain.from_iterable(map(_route_injections, _iter_route_views(app)))
+
+
+def _route_injections(route: _RouteView) -> Iterator[tuple[_RouteView, object]]:
+    return ((route, contract) for contract in _injected_contracts(route))
 
 
 def _iter_route_views(app: FastAPI) -> Iterator[_RouteView]:
@@ -118,26 +127,29 @@ def _iter_route_views(app: FastAPI) -> Iterator[_RouteView]:
         route = getattr(candidate, "original_route", candidate)
         if not isinstance(route, APIRoute | APIWebSocketRoute):
             continue
-        endpoint = getattr(candidate, "endpoint", route.endpoint)
-        route_dependencies = getattr(candidate, "dependencies", route.dependencies)
         yield _RouteView(
             path=getattr(candidate, "path", route.path),
-            calls=(
-                endpoint,
-                *(
-                    marker.dependency
-                    for marker in route_dependencies
-                    if marker.dependency is not None
-                ),
+            calls=_route_calls(
+                getattr(candidate, "endpoint", route.endpoint),
+                getattr(candidate, "dependencies", route.dependencies),
             ),
             is_websocket=isinstance(route, APIWebSocketRoute),
         )
 
 
+def _route_calls(
+    endpoint: Callable[..., object], dependencies: Iterable[DependsMarker]
+) -> tuple[Callable[..., object], ...]:
+    """The endpoint plus every route-level dependency callable."""
+    return (
+        endpoint,
+        *(marker.dependency for marker in dependencies if marker.dependency is not None),
+    )
+
+
 def _injected_contracts(route: _RouteView) -> Iterator[object]:
     visited: set[int] = set()
-    for call in route.calls:
-        yield from _collect_contracts(call, visited)
+    return chain.from_iterable(_collect_contracts(call, visited) for call in route.calls)
 
 
 def _collect_contracts(call: Callable[..., object], visited: set[int]) -> Iterator[object]:
@@ -148,9 +160,9 @@ def _collect_contracts(call: Callable[..., object], visited: set[int]) -> Iterat
     if id(call) in visited:
         return
     visited.add(id(call))
-    for parameter in _dependency_parameters(call):
-        for dependency in _parameter_dependencies(parameter):
-            yield from _collect_contracts(dependency, visited)
+    nested = chain.from_iterable(map(_parameter_dependencies, _dependency_parameters(call)))
+    for dependency in nested:
+        yield from _collect_contracts(dependency, visited)
 
 
 def _parameter_dependencies(parameter: Parameter) -> Iterator[Callable[..., object]]:
