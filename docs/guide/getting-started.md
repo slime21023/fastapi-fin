@@ -1,9 +1,9 @@
 # 安裝與第一個 App
 
-FastAPI-Fin 2.0 需要 Python 3.12 以上。使用 `uv` 將套件加到專案：
+FastAPI-Fin 0.9.1 需要 Python 3.12 以上，目前尚未發布。取得原始碼後，在專案根目錄安裝：
 
 ```console
-uv add fastapi-fin
+uv sync --locked
 ```
 
 ## 定義服務契約並接上路由
@@ -12,8 +12,7 @@ uv add fastapi-fin
 Dishka 的 `@provide` 以回傳型別註冊契約，`Module.exports` 將契約公開給路由。
 路由本身仍用原生 FastAPI 宣告。
 
-將以下程式存成 `app.py`。若要執行最後的 `TestClient` 驗證，先用
-`uv add --dev httpx httpx2` 裝好不同 FastAPI 版本所需的測試客戶端。
+將以下程式存成 `app.py`。`uv sync --locked` 已安裝範例使用的測試客戶端。
 
 ```python
 from typing import Protocol

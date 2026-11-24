@@ -6,7 +6,7 @@ scope、role 與 resource policy 則由獨立的 authorization policy 處理。
 JWT 支援是 optional dependency：
 
 ```powershell
-uv add "fastapi-fin[security]"
+uv sync --locked --extra security
 ```
 
 ## 建立 JWT issuer 與 verifier

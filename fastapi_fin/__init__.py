@@ -1,4 +1,4 @@
-"""FastAPI-Fin 2.0.0: contract-first dishka dependency injection for FastAPI."""
+"""FastAPI-Fin: contract-first dishka dependency injection for FastAPI."""
 
 from importlib import import_module
 from typing import TYPE_CHECKING
@@ -28,7 +28,7 @@ from .security import (
 if TYPE_CHECKING:
     from .adapters import CONTAINER_STATE_KEY, FastAPIIntegration, FastAPISecurity, Inject
 
-__version__ = "2.0.0"
+__version__ = "0.9.1"
 
 
 def __getattr__(name: str) -> object:

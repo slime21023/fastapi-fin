@@ -1,6 +1,6 @@
 # API 參考
 
-本區說明 FastAPI-Fin 2.0 的公開 API、組裝規則及錯誤責任。第一次使用請先閱讀[快速入門](../guide/getting-started.md)與[核心概念](../guide/concepts.md)。
+本區說明 FastAPI-Fin 的公開 API、組裝規則及錯誤責任。第一次使用請先閱讀[快速入門](../guide/getting-started.md)與[核心概念](../guide/concepts.md)。
 
 | 頁面 | 內容 |
 | --- | --- |

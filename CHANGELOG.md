@@ -1,13 +1,13 @@
 # Changelog
 
-## [2.0.0]
+## [0.9.1] — 尚未發布
 
 - 以 Dishka 取代自建 DI runtime。`Module` 宣告 `exports`／`requires`；`Application` 組裝產品與測試依賴。`with_overrides()` 可替換已匯出的契約。
 - 在原生 FastAPI app 上以 `FastAPIIntegration.lifespan` 和 `Inject[T]` 啟用 DI，不需自訂 router、middleware 或 endpoint 包裝。
 - 保留 JWT 與 principal policy；`FastAPISecurity` 現在由 `TokenAuthenticator` 契約取得認證實作，仍使用原生 OAuth2 scopes 與 HTTP 401／403。
-- 移除 1.x 的 application definition、router、runtime、Guard、Interceptor、Events、Config 與 Cache，不保留相容性轉接層。
+- 移除開發版的 application definition、router、runtime、Guard、Interceptor、Events、Config 與 Cache，不保留相容性轉接層。
 
-## [1.0.1] - 2026-08-03
+## 歷史開發快照 1.0.1（未發布）
 
 ### Added
 
@@ -26,9 +26,7 @@
   concurrency 控制。
 - 新增 attrs runtime dependency 與對應的 immutable model regression tests。
 
-## [1.0.0] - 2026-08-03
-
-第一個穩定版本。
+## 歷史開發快照 1.0.0（未發布）
 
 ### Changed
 
