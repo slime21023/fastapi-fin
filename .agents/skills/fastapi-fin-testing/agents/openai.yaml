@@ -1,4 +1,0 @@
-interface:
-  display_name: "FastAPI-Fin Testing"
-  short_description: "Apply layered FastAPI-Fin testing strategy"
-  default_prompt: "Use $fastapi-fin-testing to design or review layered tests for FastAPI-Fin."
