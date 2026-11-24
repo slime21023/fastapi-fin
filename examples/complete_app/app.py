@@ -21,6 +21,10 @@ def create_app(application: Application) -> FastAPI:
     return app
 
 
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
 def run_demo() -> None:
     signing_key = token_hex(32)
     issuer = JwtIssuer(
@@ -37,13 +41,9 @@ def run_demo() -> None:
     with TestClient(create_app(application)) as client:
         empty = client.get("/tasks")
         missing = client.post("/tasks", json=payload)
-        invalid = client.post("/tasks", json=payload, headers={"Authorization": "Bearer not-a-jwt"})
-        forbidden = client.post(
-            "/tasks", json=payload, headers={"Authorization": f"Bearer {user_token}"}
-        )
-        created = client.post(
-            "/tasks", json=payload, headers={"Authorization": f"Bearer {admin_token}"}
-        )
+        invalid = client.post("/tasks", json=payload, headers=_bearer("not-a-jwt"))
+        forbidden = client.post("/tasks", json=payload, headers=_bearer(user_token))
+        created = client.post("/tasks", json=payload, headers=_bearer(admin_token))
         tasks = client.get("/tasks")
 
     assert empty.status_code == 200

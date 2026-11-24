@@ -6,14 +6,26 @@ from importlib import import_module
 from types import MappingProxyType, ModuleType
 from uuid import uuid4
 
-from attrs import define, field
+from attrs import Attribute, define, field
 
-from .._validation import bool_validator
+from .._validation import (
+    bool_validator,
+    normalize_text,
+    normalize_text_tuple,
+    optional_text_converter,
+    text_converter,
+    text_tuple_converter,
+)
 from ..errors import DefinitionError
 from .claims import AuthenticatedPrincipal
 from .errors import InvalidTokenError, SecurityDependencyError
 
 JwtKeyResolver = Callable[[Mapping[str, object]], object]
+
+_REGISTERED_CLAIMS = frozenset({"iss", "sub", "aud", "iat", "exp", "jti"})
+# RFC 9068 media type for access tokens, not a secret.
+_DEFAULT_TOKEN_TYPE = "at+jwt"  # noqa: S105  # nosec B105
+_DEFAULT_LIFETIME = timedelta(minutes=15)
 
 
 def _load_jwt() -> ModuleType:
@@ -26,44 +38,17 @@ def _load_jwt() -> ModuleType:
         ) from error
 
 
-def _normalize_algorithms(values: Iterable[str]) -> tuple[str, ...]:
-    if isinstance(values, str):
-        values = (values,)
-    try:
-        normalized = tuple(dict.fromkeys(values))
-    except TypeError as error:
-        raise DefinitionError("JWT algorithms must be iterable") from error
-    if not normalized or not all(isinstance(value, str) and value.strip() for value in normalized):
-        raise DefinitionError("JWT algorithms must contain non-empty strings")
-    if "none" in {value.lower() for value in normalized}:
+def _normalize_algorithms(values: Iterable[str] | str) -> tuple[str, ...]:
+    algorithms = normalize_text_tuple(values, "JWT algorithms", allow_empty=False)
+    if any(algorithm.lower() == "none" for algorithm in algorithms):
         raise DefinitionError("JWT unsecured algorithm is not supported")
-    return tuple(value.strip() for value in normalized)
-
-
-def _normalize_claim_names(values: Iterable[str]) -> tuple[str, ...]:
-    if isinstance(values, str):
-        values = (values,)
-    try:
-        normalized = tuple(dict.fromkeys(values))
-    except TypeError as error:
-        raise DefinitionError("JWT required claims must be iterable") from error
-    if not all(isinstance(value, str) and value.strip() for value in normalized):
-        raise DefinitionError("JWT required claims must contain non-empty strings")
-    return tuple(value.strip() for value in normalized)
+    return algorithms
 
 
 def _normalize_audience(value: str | Iterable[str]) -> str | tuple[str, ...]:
     if isinstance(value, str):
-        if not value.strip():
-            raise DefinitionError("JWT audience must not be empty")
-        return value.strip()
-    try:
-        normalized = tuple(dict.fromkeys(value))
-    except TypeError as error:
-        raise DefinitionError("JWT audience must be a string or iterable of strings") from error
-    if not normalized or not all(isinstance(item, str) and item.strip() for item in normalized):
-        raise DefinitionError("JWT audience must be a string or iterable of strings")
-    return tuple(item.strip() for item in normalized)
+        return normalize_text(value, "JWT audience")
+    return normalize_text_tuple(value, "JWT audience", allow_empty=False)
 
 
 def _normalize_key_set(value: Mapping[str, object]) -> Mapping[str, object]:
@@ -79,34 +64,9 @@ def _normalize_key_set(value: Mapping[str, object]) -> Mapping[str, object]:
     return MappingProxyType(normalized)
 
 
-def _normalize_text(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise DefinitionError(f"{label} must be non-empty text")
-    return value.strip()
-
-
-def _normalize_optional_text(value: object, label: str) -> str | None:
-    if value is None:
-        return None
-    return _normalize_text(value, label)
-
-
-def _normalize_issue_values(value: Iterable[str], label: str) -> tuple[str, ...]:
-    if isinstance(value, str):
-        values = (value,)
-    else:
-        try:
-            values = tuple(value)
-        except TypeError as error:
-            raise DefinitionError(f"{label} must be iterable") from error
-    if not all(isinstance(item, str) and item.strip() for item in values):
-        raise DefinitionError(f"{label} must contain non-empty strings")
-    return tuple(dict.fromkeys(item.strip() for item in values))
-
-
-def _validate_claim_name(_instance: object, attribute: object, value: str) -> None:
-    if value in {"iss", "sub", "aud", "iat", "exp", "jti"}:
-        raise DefinitionError(f"{attribute} cannot override a registered JWT claim")
+def _validate_claim_name(_instance: object, attribute: Attribute, value: str) -> None:
+    if value in _REGISTERED_CLAIMS:
+        raise DefinitionError(f"{attribute.name} cannot override a registered JWT claim")
 
 
 def _validate_lifetime(_instance: object, _attribute: object, value: timedelta) -> None:
@@ -114,9 +74,22 @@ def _validate_lifetime(_instance: object, _attribute: object, value: timedelta) 
         raise DefinitionError("JWT lifetime must be positive")
 
 
-def _validate_leeway(_instance: object, _attribute: object, value: int | float) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+def _validate_leeway(_instance: object, _attribute: object, value: float) -> None:
+    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
         raise DefinitionError("JWT leeway must be a non-negative number")
+
+
+def _claim_name_field(label: str, default: str) -> str:
+    return field(
+        default=default,
+        converter=text_converter(label),
+        validator=_validate_claim_name,
+    )
+
+
+def _require_distinct_claim_names(scope_claim: str, roles_claim: str) -> None:
+    if scope_claim == roles_claim:
+        raise DefinitionError("JWT scope_claim and roles_claim must be different")
 
 
 @define(frozen=True, slots=True, kw_only=True)
@@ -147,34 +120,24 @@ class JwtVerifier:
     key: object | None = None
     key_resolver: JwtKeyResolver | None = None
     algorithms: tuple[str, ...] = field(converter=_normalize_algorithms)
-    issuer: str = field(default="", converter=lambda value: _normalize_text(value, "JWT issuer"))
+    issuer: str = field(converter=text_converter("JWT issuer"))
     audience: str | tuple[str, ...] = field(converter=_normalize_audience)
     required_claims: tuple[str, ...] = field(
         default=("exp", "iat", "iss", "sub", "aud"),
-        converter=_normalize_claim_names,
+        converter=text_tuple_converter("JWT required claims"),
     )
     expected_type: str | None = field(
-        default="at+jwt",
-        converter=lambda value: _normalize_optional_text(value, "JWT expected_type"),
+        default=_DEFAULT_TOKEN_TYPE, converter=optional_text_converter("JWT expected_type")
     )
     require_jti: bool = field(default=True, validator=bool_validator("require_jti"))
-    leeway: int | float = field(default=0, validator=_validate_leeway)
-    scope_claim: str = field(
-        default="scope",
-        converter=lambda value: _normalize_text(value, "JWT scope_claim"),
-        validator=_validate_claim_name,
-    )
-    roles_claim: str = field(
-        default="roles",
-        converter=lambda value: _normalize_text(value, "JWT roles_claim"),
-        validator=_validate_claim_name,
-    )
+    leeway: float = field(default=0, validator=_validate_leeway)
+    scope_claim: str = _claim_name_field("JWT scope_claim", "scope")
+    roles_claim: str = _claim_name_field("JWT roles_claim", "roles")
 
     def __attrs_post_init__(self) -> None:
         if (self.key is None) == (self.key_resolver is None):
             raise DefinitionError("JWT verifier requires exactly one key or key_resolver")
-        if self.scope_claim == self.roles_claim:
-            raise DefinitionError("JWT scope_claim and roles_claim must be different")
+        _require_distinct_claim_names(self.scope_claim, self.roles_claim)
         if self.require_jti and "jti" not in self.required_claims:
             object.__setattr__(self, "required_claims", (*self.required_claims, "jti"))
 
@@ -182,33 +145,7 @@ class JwtVerifier:
         """Verify one bearer token and return its validated principal."""
         if not isinstance(token, str) or not token.strip():
             raise InvalidTokenError("JWT token is required")
-        jwt = _load_jwt()
-        try:
-            header = jwt.get_unverified_header(token)
-            algorithm = header.get("alg")
-            if algorithm not in self.algorithms:
-                raise InvalidTokenError("JWT algorithm is not trusted")
-            if self.expected_type is not None and header.get("typ") != self.expected_type:
-                raise InvalidTokenError("JWT type is not trusted")
-            key = self.key_resolver(header) if self.key_resolver is not None else self.key
-            payload = jwt.decode(
-                token,
-                key,
-                algorithms=list(self.algorithms),
-                audience=self.audience,
-                issuer=self.issuer,
-                leeway=self.leeway,
-                options={
-                    "require": list(self.required_claims),
-                    "verify_iat": True,
-                },
-            )
-        except InvalidTokenError:
-            raise
-        except (jwt.PyJWTError, KeyError, TypeError, ValueError) as error:
-            raise InvalidTokenError("JWT validation failed") from error
-        if not isinstance(payload, dict):
-            raise InvalidTokenError("JWT claims must be an object")
+        payload = self._decode(token)
         if self.require_jti and not isinstance(payload.get("jti"), str):
             raise InvalidTokenError("JWT ID is required")
         return AuthenticatedPrincipal(
@@ -222,47 +159,57 @@ class JwtVerifier:
             claims=payload,
         )
 
+    def _decode(self, token: str) -> dict[str, object]:
+        """Check the unverified header, then verify the signature and registered claims."""
+        jwt = _load_jwt()
+        try:
+            header = jwt.get_unverified_header(token)
+            self._require_trusted_header(header)
+            key = self.key_resolver(header) if self.key_resolver is not None else self.key
+            payload = jwt.decode(
+                token,
+                key,
+                algorithms=list(self.algorithms),
+                audience=self.audience,
+                issuer=self.issuer,
+                leeway=self.leeway,
+                options={"require": list(self.required_claims), "verify_iat": True},
+            )
+        except InvalidTokenError:
+            raise
+        except (jwt.PyJWTError, KeyError, TypeError, ValueError) as error:
+            raise InvalidTokenError("JWT validation failed") from error
+        if not isinstance(payload, dict):
+            raise InvalidTokenError("JWT claims must be an object")
+        return payload
+
+    def _require_trusted_header(self, header: Mapping[str, object]) -> None:
+        if header.get("alg") not in self.algorithms:
+            raise InvalidTokenError("JWT algorithm is not trusted")
+        if self.expected_type is not None and header.get("typ") != self.expected_type:
+            raise InvalidTokenError("JWT type is not trusted")
+
 
 @define(frozen=True, slots=True, kw_only=True)
 class JwtIssuer:
     """Issue short-lived JWT access tokens with reserved claims protected."""
 
     key: object
-    algorithm: str = field(converter=lambda value: _normalize_text(value, "JWT algorithm"))
-    issuer: str = field(converter=lambda value: _normalize_text(value, "JWT issuer"))
+    algorithm: str = field(converter=text_converter("JWT algorithm"))
+    issuer: str = field(converter=text_converter("JWT issuer"))
     audience: str | tuple[str, ...] = field(converter=_normalize_audience)
-    lifetime: timedelta = field(
-        default=timedelta(minutes=15),
-        validator=_validate_lifetime,
-    )
-    token_type: str = field(
-        default="at+jwt",
-        converter=lambda value: _normalize_text(value, "JWT token_type"),
-    )
-    key_id: str | None = field(
-        default=None,
-        converter=lambda value: _normalize_optional_text(value, "JWT key_id"),
-    )
-    scope_claim: str = field(
-        default="scope",
-        converter=lambda value: _normalize_text(value, "JWT scope_claim"),
-        validator=_validate_claim_name,
-    )
-    roles_claim: str = field(
-        default="roles",
-        converter=lambda value: _normalize_text(value, "JWT roles_claim"),
-        validator=_validate_claim_name,
-    )
+    lifetime: timedelta = field(default=_DEFAULT_LIFETIME, validator=_validate_lifetime)
+    token_type: str = field(default=_DEFAULT_TOKEN_TYPE, converter=text_converter("JWT token_type"))
+    key_id: str | None = field(default=None, converter=optional_text_converter("JWT key_id"))
+    scope_claim: str = _claim_name_field("JWT scope_claim", "scope")
+    roles_claim: str = _claim_name_field("JWT roles_claim", "roles")
 
     def __attrs_post_init__(self) -> None:
         if self.algorithm.lower() == "none":
             raise DefinitionError("JWT unsecured algorithm is not supported")
-        if self.scope_claim == self.roles_claim:
-            raise DefinitionError("JWT scope_claim and roles_claim must be different")
-        if self.key_id is not None and not self.key_id:
-            raise DefinitionError("JWT key_id must be non-empty when provided")
+        _require_distinct_claim_names(self.scope_claim, self.roles_claim)
 
-    def issue(  # noqa: PLR0913 — preserve the public keyword-only signing options.
+    def issue(  # noqa: PLR0913 - the public signing options are keyword-only on purpose.
         self,
         subject: str,
         *,
@@ -273,43 +220,47 @@ class JwtIssuer:
         now: datetime | None = None,
     ) -> str:
         """Issue one signed access token with standard registered claims."""
-        if not isinstance(subject, str) or not subject.strip():
-            raise DefinitionError("JWT subject must not be empty")
-        issued_at = now or datetime.now(UTC)
-        if issued_at.tzinfo is None:
-            issued_at = issued_at.replace(tzinfo=UTC)
-        if not isinstance(issued_at, datetime):
-            raise DefinitionError("JWT now must be a datetime")
-        normalized_token_id = (
-            uuid4().hex if token_id is None else _normalize_text(token_id, "JWT token_id")
-        )
+        issued_at = _as_aware_datetime(now)
         claims: dict[str, object] = {
             "iss": self.issuer,
-            "sub": subject.strip(),
+            "sub": normalize_text(subject, "JWT subject"),
             "aud": self.audience,
             "iat": issued_at,
             "exp": issued_at + self.lifetime,
-            "jti": normalized_token_id,
+            "jti": uuid4().hex if token_id is None else normalize_text(token_id, "JWT token_id"),
         }
         if additional_claims is not None:
             _merge_additional_claims(
                 claims, additional_claims, (self.scope_claim, self.roles_claim, "kid")
             )
-        normalized_scopes = _normalize_issue_values(scopes, "JWT scopes")
-        normalized_roles = _normalize_issue_values(roles, "JWT roles")
-        if normalized_scopes:
+        claims.update(self._scope_and_role_claims(scopes, roles))
+        return _load_jwt().encode(
+            claims, self.key, algorithm=self.algorithm, headers=self._headers()
+        )
+
+    def _scope_and_role_claims(
+        self, scopes: Iterable[str], roles: Iterable[str]
+    ) -> dict[str, object]:
+        claims: dict[str, object] = {}
+        if normalized_scopes := normalize_text_tuple(scopes, "JWT scopes"):
             claims[self.scope_claim] = " ".join(normalized_scopes)
-        if normalized_roles:
+        if normalized_roles := normalize_text_tuple(roles, "JWT roles"):
             claims[self.roles_claim] = list(normalized_roles)
+        return claims
+
+    def _headers(self) -> dict[str, str]:
         headers = {"typ": self.token_type}
         if self.key_id is not None:
             headers["kid"] = self.key_id
-        return _load_jwt().encode(
-            claims,
-            self.key,
-            algorithm=self.algorithm,
-            headers=headers,
-        )
+        return headers
+
+
+def _as_aware_datetime(now: datetime | None) -> datetime:
+    if now is None:
+        return datetime.now(UTC)
+    if not isinstance(now, datetime):
+        raise DefinitionError("JWT now must be a datetime")
+    return now if now.tzinfo is not None else now.replace(tzinfo=UTC)
 
 
 def _merge_additional_claims(

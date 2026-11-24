@@ -12,9 +12,10 @@ from fastapi import Depends, FastAPI, Request, routing
 from fastapi.params import Depends as DependsMarker
 from fastapi.routing import APIRoute, APIWebSocketRoute
 
+from .._validation import normalize_contract
 from ..container import open_container
 from ..errors import AdapterError, AssemblyError, DefinitionError
-from ..modules import Application, _normalize_contract
+from ..modules import Application
 
 CONTAINER_STATE_KEY: Final = "fastapi_fin_container"
 _REQUEST_STATE_KEY: Final = "_fastapi_fin_request_container"
@@ -60,7 +61,7 @@ else:
 
         def __class_getitem__(cls, contract: object) -> object:
             try:
-                _normalize_contract(contract)
+                normalize_contract(contract)
             except DefinitionError as error:
                 raise AdapterError(
                     "Inject contract must be a hashable type hint, not a string"
@@ -88,40 +89,91 @@ class FastAPIIntegration:
             yield {CONTAINER_STATE_KEY: container}
 
 
+@define(frozen=True, slots=True)
+class _RouteView:
+    """The parts of a FastAPI route that can declare injected dependencies."""
+
+    path: str
+    calls: tuple[Callable[..., object], ...]
+    is_websocket: bool
+
+
 def _validate_injections(app: FastAPI, exports: Mapping[object, str]) -> None:
+    """Fail at startup when a route injects a contract that no module exports."""
+    for route in _iter_route_views(app):
+        for contract in _injected_contracts(route):
+            if route.is_websocket:
+                raise AdapterError(f"Inject is not supported on WebSocket route {route.path!r}")
+            if contract not in exports:
+                raise AssemblyError(
+                    f"route {route.path!r} injects {contract!r}, which is not an exported contract"
+                )
+
+
+def _iter_route_views(app: FastAPI) -> Iterator[_RouteView]:
     # Newer FastAPI versions expose included routes through route contexts.
     iter_contexts = getattr(routing, "iter_route_contexts", None)
-    contexts = iter_contexts(app.routes) if iter_contexts is not None else app.routes
-    for route in contexts:
-        original = getattr(route, "original_route", route)
-        if not isinstance(original, (APIRoute, APIWebSocketRoute)):
+    candidates = iter_contexts(app.routes) if iter_contexts is not None else app.routes
+    for candidate in candidates:
+        route = getattr(candidate, "original_route", candidate)
+        if not isinstance(route, APIRoute | APIWebSocketRoute):
             continue
-        seen: set[int] = set()
-        endpoint = getattr(route, "endpoint", original.endpoint)
-        dependencies = getattr(route, "dependencies", original.dependencies)
-        path = getattr(route, "path", original.path)
-        for call in (endpoint, *(dep.dependency for dep in dependencies)):
-            if call is None:
-                continue
-            for contract in _collect_contracts(call, seen):
-                if isinstance(original, APIWebSocketRoute):
-                    raise AdapterError(f"Inject is not supported on WebSocket route {path!r}")
-                if contract not in exports:
-                    raise AssemblyError(
-                        f"route {path!r} injects {contract!r}, which is not an exported contract"
-                    )
+        endpoint = getattr(candidate, "endpoint", route.endpoint)
+        route_dependencies = getattr(candidate, "dependencies", route.dependencies)
+        yield _RouteView(
+            path=getattr(candidate, "path", route.path),
+            calls=(
+                endpoint,
+                *(
+                    marker.dependency
+                    for marker in route_dependencies
+                    if marker.dependency is not None
+                ),
+            ),
+            is_websocket=isinstance(route, APIWebSocketRoute),
+        )
+
+
+def _injected_contracts(route: _RouteView) -> Iterator[object]:
+    visited: set[int] = set()
+    for call in route.calls:
+        yield from _collect_contracts(call, visited)
+
+
+def _collect_contracts(call: Callable[..., object], visited: set[int]) -> Iterator[object]:
+    """Yield every contract injected by ``call`` or by its nested FastAPI dependencies."""
+    if isinstance(call, _InjectDependency):
+        yield call.contract
+        return
+    if id(call) in visited:
+        return
+    visited.add(id(call))
+    for parameter in _dependency_parameters(call):
+        for dependency in _parameter_dependencies(parameter):
+            yield from _collect_contracts(dependency, visited)
+
+
+def _parameter_dependencies(parameter: Parameter) -> Iterator[Callable[..., object]]:
+    """Yield the callables behind ``Annotated[..., Depends(...)]`` or ``= Depends(...)``."""
+    annotation = parameter.annotation
+    markers: list[DependsMarker] = []
+    if get_origin(annotation) is Annotated:
+        annotation, *metadata = get_args(annotation)
+        markers.extend(item for item in metadata if isinstance(item, DependsMarker))
+    if isinstance(parameter.default, DependsMarker):
+        markers.append(parameter.default)
+    for marker in markers:
+        # ``Depends()`` without a callable means "call the annotated class".
+        dependency = marker.dependency
+        if dependency is None and isinstance(annotation, type):
+            dependency = annotation
+        if dependency is not None:
+            yield dependency
 
 
 def _dependency_parameters(call: Callable[..., object]) -> Iterable[Parameter]:
-    target = unwrap(call)
-    if isinstance(target, type):
-        target = target.__init__
-    elif not hasattr(target, "__globals__"):
-        target = type(target).__call__
     try:
-        return signature(
-            call, eval_str=True, globals=getattr(target, "__globals__", None)
-        ).parameters.values()
+        return signature(call, eval_str=True, globals=_annotation_globals(call)).parameters.values()
     except (NameError, TypeError, ValueError, SyntaxError):
         # FastAPI may accept annotations that inspect cannot resolve.
         try:
@@ -130,27 +182,14 @@ def _dependency_parameters(call: Callable[..., object]) -> Iterable[Parameter]:
             return ()
 
 
-def _collect_contracts(call: Callable[..., object], seen: set[int]) -> Iterator[object]:
-    if isinstance(call, _InjectDependency):
-        yield call.contract
-        return
-    if id(call) in seen:
-        return
-    seen.add(id(call))
-    for parameter in _dependency_parameters(call):
-        annotation = parameter.annotation
-        markers = []
-        if get_origin(annotation) is Annotated:
-            annotation, *metadata = get_args(annotation)
-            markers.extend(value for value in metadata if isinstance(value, DependsMarker))
-        if isinstance(parameter.default, DependsMarker):
-            markers.append(parameter.default)
-        for marker in markers:
-            dependency = marker.dependency
-            if dependency is None and isinstance(annotation, type):
-                dependency = annotation
-            if dependency is not None:
-                yield from _collect_contracts(dependency, seen)
+def _annotation_globals(call: Callable[..., object]) -> dict[str, object] | None:
+    """Locate the namespace where ``call``'s string annotations were written."""
+    target = unwrap(call)
+    if isinstance(target, type):
+        target = target.__init__
+    elif not hasattr(target, "__globals__"):
+        target = type(target).__call__
+    return getattr(target, "__globals__", None)
 
 
 __all__ = ["CONTAINER_STATE_KEY", "FastAPIIntegration", "Inject"]

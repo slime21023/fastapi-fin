@@ -194,3 +194,21 @@ def issuer_and_verify(
     roles: tuple[str, ...] = (),
 ) -> AuthenticatedPrincipal:
     return verifier().authenticate(issuer().issue(subject, scopes=scopes, roles=roles))
+
+
+def test_issuer_rejects_a_non_datetime_now_with_a_definition_error() -> None:
+    not_a_datetime: Any = "yesterday"
+
+    with pytest.raises(DefinitionError, match="now must be a datetime"):
+        issuer().issue("user-1", now=not_a_datetime)
+
+
+def test_reserved_claim_error_names_the_offending_option() -> None:
+    with pytest.raises(DefinitionError, match="scope_claim cannot override a registered"):
+        JwtIssuer(
+            key=KEY,
+            algorithm="HS256",
+            issuer="https://issuer.example",
+            audience="api",
+            scope_claim="sub",
+        )
