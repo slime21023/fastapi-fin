@@ -119,6 +119,13 @@ def test_fastapi_security_require_marker_enforces_roles() -> None:
     assert allowed.json() == {"subject": "user-1"}
 
 
+def test_fastapi_security_scope_descriptions_are_read_only() -> None:
+    security = FastAPISecurity(scopes={"users:read": "Read users"})
+
+    with pytest.raises(TypeError):
+        security.scopes["users:write"] = "Write users"  # ty: ignore[invalid-assignment]
+
+
 def test_fastapi_security_requires_exported_token_authenticator_at_startup() -> None:
     integration = FastAPIIntegration(Application())
     app = FastAPI(lifespan=integration.lifespan)

@@ -2,7 +2,7 @@
 
 from attrs import define, field
 
-from .._validation import bool_validator, text_tuple_converter
+from .._validation import bool_validator, text_converter, text_tuple_converter
 from .claims import AuthenticatedPrincipal
 from .errors import AuthorizationError, InsufficientScopeError
 
@@ -14,7 +14,7 @@ class PrincipalPolicy:
     scopes: tuple[str, ...] = field(default=(), converter=text_tuple_converter("required scopes"))
     roles: tuple[str, ...] = field(default=(), converter=text_tuple_converter("required roles"))
     all_roles: bool = field(default=True, validator=bool_validator("all_roles"))
-    name: str = "principal-policy"
+    name: str = field(default="principal-policy", converter=text_converter("policy name"))
 
     def allows(self, principal: AuthenticatedPrincipal) -> bool:
         """Return whether a principal satisfies this policy."""

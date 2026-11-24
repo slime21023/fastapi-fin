@@ -2,6 +2,7 @@
 
 from collections.abc import Awaitable, Callable, Mapping
 from inspect import isawaitable
+from types import MappingProxyType
 
 from fastapi import Depends, HTTPException, Security
 from fastapi.params import Depends as DependsMarker
@@ -32,7 +33,7 @@ class FastAPISecurity:
         description: str | None = None,
     ) -> None:
         """Configure HTTP bearer or OAuth2 password bearer authentication."""
-        if token_url is not None and (not isinstance(token_url, str) or not token_url.strip()):
+        if token_url is not None and not _is_text(token_url):
             raise AdapterError("security token_url must be non-empty text")
         self.scopes = _validated_scope_descriptions(scopes)
         self.scheme = _build_scheme(token_url, self.scopes, scheme_name, description)
@@ -88,14 +89,14 @@ class FastAPISecurity:
             raise AdapterError(f"security scopes are not declared: {sorted(undeclared)!r}")
 
 
-def _validated_scope_descriptions(scopes: Mapping[str, str] | None) -> dict[str, str]:
+def _validated_scope_descriptions(scopes: Mapping[str, str] | None) -> Mapping[str, str]:
     if scopes is None:
-        return {}
+        return MappingProxyType({})
     if not isinstance(scopes, Mapping):
         raise AdapterError("security scopes must be a mapping")
     if not all(_is_text(name) and _is_text(summary) for name, summary in scopes.items()):
         raise AdapterError("security scopes must map non-empty names to descriptions")
-    return dict(scopes)
+    return MappingProxyType(dict(scopes))
 
 
 def _is_text(value: object) -> bool:
@@ -104,7 +105,7 @@ def _is_text(value: object) -> bool:
 
 def _build_scheme(
     token_url: str | None,
-    scopes: dict[str, str],
+    scopes: Mapping[str, str],
     scheme_name: str | None,
     description: str | None,
 ) -> HTTPBearer | OAuth2PasswordBearer:
@@ -112,7 +113,7 @@ def _build_scheme(
         return HTTPBearer(auto_error=False, scheme_name=scheme_name, description=description)
     return OAuth2PasswordBearer(
         tokenUrl=token_url,
-        scopes=scopes,
+        scopes=dict(scopes),
         scheme_name=scheme_name,
         description=description,
         auto_error=False,

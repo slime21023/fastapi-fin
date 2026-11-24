@@ -234,7 +234,7 @@ FastAPISecurity(
 
 建構子不接收 authenticator。應用程式須以 Dishka provider 提供 `TokenAuthenticator`，在其 `Module` 宣告 `exports=(TokenAuthenticator,)`，再將該模組納入 `FastAPIIntegration` 的 `Application`。`token_url` 若非 `None`，必須是非空白文字；`scopes` 若提供，必須是非空白 scope 名稱到非空白描述的映射。設定不符時拋出 `AdapterError`。範例見[安全性指南](../guide/security.md)。
 
-`scheme` 是選用的 FastAPI bearer scheme；`scopes` 是建構時複製的 scope 說明字典；`current_principal` 是解析 bearer 憑證、注入 authenticator 並檢查 FastAPI `SecurityScopes` 的依賴 callable。一般路由使用下列兩個 marker 方法。
+`scheme` 是選用的 FastAPI bearer scheme；`scopes` 是建構時複製的唯讀 scope 說明映射；`current_principal` 是解析 bearer 憑證、注入 authenticator 並檢查 FastAPI `SecurityScopes` 的依賴 callable。一般路由使用下列兩個 marker 方法。
 
 ### `principal_marker()`
 

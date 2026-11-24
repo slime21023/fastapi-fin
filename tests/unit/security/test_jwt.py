@@ -167,6 +167,11 @@ def test_policy_rejects_malformed_requirements_at_definition_time() -> None:
         require_roles(*malformed_roles)
 
 
+def test_policy_rejects_blank_name() -> None:
+    with pytest.raises(DefinitionError, match="policy name must be non-empty text"):
+        require_scopes("users:read", name="  ")
+
+
 def test_issuer_normalizes_claim_inputs_and_rejects_reserved_custom_names() -> None:
     token = issuer().issue("user-1", scopes="users:read", roles="admin", token_id="token-1")
     principal = verifier().authenticate(token)

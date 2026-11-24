@@ -67,15 +67,20 @@ def optional_text_converter(
 
 
 def normalize_text_tuple(
-    values: Iterable[str] | str, label: str, *, allow_empty: bool = True
+    values: Iterable[object] | str,
+    label: str,
+    *,
+    allow_empty: bool = True,
+    error: type[FastAPIFinError] = DefinitionError,
 ) -> tuple[str, ...]:
     """Strip and de-duplicate non-empty strings; a lone string counts as one item."""
     items = (values,) if isinstance(values, str) else normalize_iterable(values, label)
-    if not all(isinstance(item, str) and item.strip() for item in items):
-        raise DefinitionError(f"{label} must contain non-empty strings")
-    normalized = tuple(dict.fromkeys(item.strip() for item in items))
+    texts = [item.strip() for item in items if isinstance(item, str)]
+    if len(texts) != len(items) or not all(texts):
+        raise error(f"{label} must contain non-empty strings")
+    normalized = tuple(dict.fromkeys(texts))
     if not normalized and not allow_empty:
-        raise DefinitionError(f"{label} must contain non-empty strings")
+        raise error(f"{label} must contain non-empty strings")
     return normalized
 
 

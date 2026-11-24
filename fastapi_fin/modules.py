@@ -5,7 +5,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from itertools import chain, repeat
 from types import MappingProxyType
 
-from attrs import define, evolve, field
+from attrs import Factory, define, evolve, field
 from dishka import DEFAULT_COMPONENT, Provider
 
 from ._validation import normalize_contract, normalize_iterable, text_converter, tuple_converter
@@ -95,13 +95,19 @@ class Application:
         default=(), converter=tuple_converter("application modules")
     )
     overrides: Mapping[object, object] = field(factory=dict, converter=_normalize_overrides)
-    _exports: Mapping[object, str] = field(init=False, repr=False, eq=False)
+    _exports: Mapping[object, str] = field(
+        init=False,
+        repr=False,
+        eq=False,
+        default=Factory(
+            lambda application: MappingProxyType(_index_exports(application.modules)),
+            takes_self=True,
+        ),
+    )
 
     def __attrs_post_init__(self) -> None:
-        owners = _index_exports(self.modules)
-        if unknown := next((item for item in self.overrides if item not in owners), None):
+        if unknown := next((item for item in self.overrides if item not in self._exports), None):
             raise AssemblyError(f"override target {unknown!r} is not an exported contract")
-        object.__setattr__(self, "_exports", MappingProxyType(owners))
 
     @property
     def exports(self) -> Mapping[object, str]:

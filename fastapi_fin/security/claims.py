@@ -6,7 +6,7 @@ from typing import cast
 
 from attrs import define, field
 
-from .._validation import optional_text_converter, text_converter
+from .._validation import normalize_text_tuple, optional_text_converter, text_converter
 from .errors import InvalidTokenError
 
 
@@ -19,16 +19,14 @@ def _text_items(value: object, label: str, *, split: bool) -> tuple[object, ...]
     return tuple(value)
 
 
-def _normalize_texts(items: tuple[object, ...], label: str) -> tuple[str, ...]:
-    texts = [item.strip() for item in items if isinstance(item, str)]
-    if not items or len(texts) != len(items) or not all(texts):
-        raise InvalidTokenError(f"{label} must contain non-empty strings")
-    return tuple(dict.fromkeys(texts))
-
-
 def _required_texts(label: str) -> Callable[[object], tuple[str, ...]]:
     def convert(value: object) -> tuple[str, ...]:
-        return _normalize_texts(_text_items(value, label, split=False), label)
+        return normalize_text_tuple(
+            _text_items(value, label, split=False),
+            label,
+            allow_empty=False,
+            error=InvalidTokenError,
+        )
 
     return convert
 
@@ -39,8 +37,9 @@ def _optional_texts(label: str, *, split: bool = False) -> Callable[[object], tu
     def convert(value: object) -> tuple[str, ...]:
         if value is None or (isinstance(value, str) and not value.strip()):
             return ()
-        items = _text_items(value, label, split=split)
-        return _normalize_texts(items, label) if items else ()
+        return normalize_text_tuple(
+            _text_items(value, label, split=split), label, error=InvalidTokenError
+        )
 
     return convert
 
