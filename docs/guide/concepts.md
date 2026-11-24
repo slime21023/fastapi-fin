@@ -1,35 +1,35 @@
-# 核心概念
+# Core concepts
 
-FastAPI-Fin 以 Dishka 組裝服務，讓模組透過明確的契約合作；HTTP 層仍使用原生
-FastAPI。服務契約描述程式碼如何取得與使用物件，不是描述 HTTP 請求與回應的
-OpenAPI 契約。
+FastAPI-Fin assembles services with Dishka so that modules cooperate through explicit contracts; the HTTP layer still uses native
+FastAPI. A service contract describes how code obtains and uses an object. It is not an
+OpenAPI contract describing HTTP requests and responses.
 
-## 從宣告到執行
+## From declaration to execution
 
 ```text
-Module（providers、exports、requires）
-    → Application（組合模組與替身）
-    → build_container()（組裝並驗證 Dishka 依賴圖）
-        ├─ FastAPIIntegration.lifespan → HTTP 請求使用 Inject[T]
-        └─ open_container() → worker、指令稿或測試使用 await container.get(T)
+Module (providers, exports, requires)
+    → Application (combines modules and fakes)
+    → build_container() (assembles and validates the Dishka dependency graph)
+        ├─ FastAPIIntegration.lifespan → HTTP requests use Inject[T]
+        └─ open_container() → workers, scripts, or tests use await container.get(T)
 ```
 
-| 名稱 | 責任 |
+| Name | Responsibility |
 | --- | --- |
-| 契約 | 用 `Protocol`、抽象基底類別或其他 Dishka 可識別的型別提示當作服務鍵。 |
-| `Module` | 宣告一組 Dishka providers，並用 `exports` 與 `requires` 描述跨模組介面。 |
-| `Application` | 組合模組，檢查模組名稱與匯出是否衝突，並記錄測試用替身。 |
-| `AsyncContainer` | 由 Dishka 解析依賴、依 scope 快取實例並清理資源。 |
-| `FastAPIIntegration` | 在 lifespan 開啟與關閉容器，透過 ASGI lifespan state 讓 `Inject` 存取當前 HTTP 請求的子容器。 |
+| Contract | A `Protocol`, abstract base class, or other type hint Dishka can identify, used as the service key. |
+| `Module` | Declares a set of Dishka providers and describes cross-module interfaces with `exports` and `requires`. |
+| `Application` | Combines modules, checks for module name and export conflicts, and records fakes for tests. |
+| `AsyncContainer` | Dishka resolves dependencies, caches instances per scope, and cleans up resources. |
+| `FastAPIIntegration` | Opens and closes the container in the lifespan, and lets `Inject` reach the child container of the current HTTP request through ASGI lifespan state. |
 
-## 宣告與資源生命週期
+## Declarations and resource lifecycle
 
-`Module` 和 `Application` 是凍結的宣告；`with_overrides()` 回傳新的 `Application`，
-不修改原本的宣告。Dishka `Provider` 實例本身不會被深度凍結，應在組裝前完成其註冊。
-組裝後的容器才持有各個 scope 的實例和清理狀態。
+`Module` and `Application` are frozen declarations; `with_overrides()` returns a new `Application`
+and does not modify the original declaration. Dishka `Provider` instances themselves are not deeply frozen, so finish registering them before assembly.
+Only the assembled container holds the instances and cleanup state of each scope.
 
-FastAPI-Fin 不另設 provider 裝飾器，也不替換 FastAPI 的 router、路由類別或 endpoint。
-用 `Provider`、`@provide` 及 `Scope` 描述服務，再讓 `Inject[T]` 透過原生 `Depends`
-將服務帶入路由。沒有 HTTP 時，直接以 `open_container()` 管理相同的依賴圖。
+FastAPI-Fin does not add its own provider decorator, and it does not replace FastAPI's router, route classes, or endpoints.
+Describe services with `Provider`, `@provide`, and `Scope`, and let `Inject[T]` bring services into routes through native `Depends`.
+Without HTTP, manage the same dependency graph directly with `open_container()`.
 
-了解[模組邊界](modules.md)與[作用域和資源清理](scopes.md)。
+Learn about [module boundaries](modules.md) and [scopes and cleanup](scopes.md).

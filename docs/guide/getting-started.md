@@ -1,20 +1,20 @@
-# 安裝與第一個 App
+# Installation and your first app
 
-FastAPI-Fin 0.9.1 需要 Python 3.12 以上。安裝：
+FastAPI-Fin 0.9.1 requires Python 3.12 or later. Install it with:
 
 ```console
 pip install fastapi-fin
 ```
 
-若使用 uv，改為 `uv add fastapi-fin`。
+With uv, use `uv add fastapi-fin` instead.
 
-## 定義服務契約並接上路由
+## Define a service contract and wire it to a route
 
-下例以 `UserDirectory` 描述路由所需的能力，讓路由不必知道使用者資料存在哪裡。
-Dishka 的 `@provide` 以回傳型別註冊契約，`Module.exports` 將契約公開給路由。
-路由本身仍用原生 FastAPI 宣告。
+The example below uses `UserDirectory` to describe the capability a route needs, so the route does not need to know where user data is stored.
+Dishka's `@provide` registers the contract by its return type, and `Module.exports` exposes the contract to routes.
+The route itself is still declared with native FastAPI.
 
-將以下程式存成 `app.py`。最後的 `TestClient` 驗證需要 httpx；請安裝 `pip install httpx httpx2`（httpx2 供 Starlette 1.x 使用）。
+Save the following code as `app.py`. The `TestClient` check at the end requires httpx; install it with `pip install httpx httpx2` (httpx2 is used by Starlette 1.x).
 
 ```python
 from typing import Protocol
@@ -41,7 +41,7 @@ class InMemoryDirectory:
 class UsersProvider(Provider):
     @provide(scope=Scope.APP)
     def directory(self) -> UserDirectory:
-        return InMemoryDirectory({42: "小林"})
+        return InMemoryDirectory({42: "Alice"})
 
 
 application = Application(
@@ -63,7 +63,7 @@ def create_app(application: Application) -> FastAPI:
     async def get_user(user_id: int, directory: Inject[UserDirectory]) -> dict[str, str]:
         name = directory.find_name(user_id)
         if name is None:
-            raise HTTPException(status_code=404, detail="找不到使用者")
+            raise HTTPException(status_code=404, detail="User not found")
         return {"name": name}
 
     return app
@@ -75,23 +75,23 @@ if __name__ == "__main__":
     with TestClient(app) as client:
         response = client.get("/users/42")
         assert response.status_code == 200
-        assert response.json() == {"name": "小林"}
+        assert response.json() == {"name": "Alice"}
 ```
 
-執行 `uv run python app.py` 驗證範例。`TestClient` 必須以 `with` 啟動，才能執行
-lifespan 並將容器傳給 HTTP 請求。`user_id` 仍由 FastAPI 解析與驗證；
-`directory` 是依賴，不是 HTTP 參數。
+Run `uv run python app.py` to verify the example. `TestClient` must be started with `with` so that
+the lifespan runs and passes the container to HTTP requests. `user_id` is still parsed and validated by FastAPI;
+`directory` is a dependency, not an HTTP parameter.
 
-## 用 Uvicorn 啟動
+## Run with Uvicorn
 
-把同一個 `app` 交給 Uvicorn：
+Hand the same `app` to Uvicorn:
 
 ```console
 pip install uvicorn
 uvicorn app:app
 ```
 
-`if __name__ == "__main__":` 區塊只在 `python app.py` 時執行，Uvicorn 不會執行它；容器由 lifespan 在伺服器啟動時建立，並在關閉時清理。細節見[使用 Uvicorn 啟動](deployment.md)。
+The `if __name__ == "__main__":` block runs only with `python app.py`; Uvicorn does not run it. The lifespan creates the container when the server starts and cleans it up when the server shuts down. For details, see [Running with Uvicorn](deployment.md).
 
-接著可閱讀[模組與契約](modules.md)、[FastAPI 整合](fastapi.md)，或用
-[契約替換來測試](testing.md)。
+Next, read [Modules and contracts](modules.md) and [FastAPI integration](fastapi.md), or
+[test with contract overrides](testing.md).

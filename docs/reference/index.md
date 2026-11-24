@@ -1,20 +1,20 @@
-# API 參考
+# API reference
 
-本區說明 FastAPI-Fin 的公開 API、組裝規則及錯誤責任。第一次使用請先閱讀[快速入門](../guide/getting-started.md)與[核心概念](../guide/concepts.md)。
+This section describes the public API of FastAPI-Fin, its assembly rules, and who is responsible for each error. If you are new, read [Getting started](../guide/getting-started.md) and [Core concepts](../guide/concepts.md) first.
 
-| 頁面 | 內容 |
+| Page | Contents |
 | --- | --- |
-| [模組與容器](modules.md) | `Module`、`Application`、合約覆寫、Dishka 容器與 context |
-| [FastAPI 整合](fastapi.md) | `Inject[T]`、`FastAPIIntegration.lifespan` 與啟動驗證 |
-| [Security 與 JWT](security.md) | `TokenAuthenticator`、JWT、principal、policy 與 `FastAPISecurity` |
-| [錯誤](errors.md) | 例外階層、發生時機與處理責任 |
+| [Modules and container](modules.md) | `Module`, `Application`, contract overrides, the Dishka container, and context |
+| [FastAPI integration](fastapi.md) | `Inject[T]`, `FastAPIIntegration.lifespan`, and startup validation |
+| [Security and JWT](security.md) | `TokenAuthenticator`, JWT, principal, policy, and `FastAPISecurity` |
+| [Errors](errors.md) | Exception hierarchy, when each is raised, and who handles it |
 
-## 匯入位置
+## Import locations
 
-- `fastapi_fin` 匯出模組、容器、adapter 與安全性公開 API。
-- `fastapi_fin.adapters` 提供 FastAPI 整合；根套件按需載入這些匯出。
-- `fastapi_fin.security` 提供不依賴 FastAPI 的認證合約、JWT、principal、policy 和安全性例外。
-- `fastapi_fin.errors` 定義共用的基底、宣告、組裝與 adapter 例外。
-- `Provider`、`provide`、`Scope` 與容器操作由 `dishka` 提供；請直接使用 Dishka 的 API。
+- `fastapi_fin` exports the public API for modules, the container, adapters, and security.
+- `fastapi_fin.adapters` provides the FastAPI integration; the root package loads these exports on demand.
+- `fastapi_fin.security` provides the authentication contract, JWT, principal, policy, and security exceptions, none of which depend on FastAPI.
+- `fastapi_fin.errors` defines the shared base, definition, assembly, and adapter exceptions.
+- `Provider`, `provide`, `Scope`, and container operations come from `dishka`; use Dishka's API directly.
 
-核心負責模組合約與容器組裝；adapter 把容器接到 FastAPI 的 lifespan 與依賴機制。路由宣告、請求與回應驗證、OpenAPI 仍由 FastAPI 負責。
+The core handles module contracts and container assembly; the adapter connects the container to FastAPI's lifespan and dependency mechanism. FastAPI remains responsible for route declarations, request and response validation, and OpenAPI.

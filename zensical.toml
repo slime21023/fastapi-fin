@@ -7,31 +7,31 @@ repo_url = "https://github.com/slime21023/fastapi-fin"
 repo_name = "slime21023/fastapi-fin"
 edit_uri = "edit/main/docs/"
 nav = [
-  { "首頁" = "index.md" },
-  { "開始使用" = [
-    { "安裝與第一個 App" = "guide/getting-started.md" },
-    { "核心概念" = "guide/concepts.md" },
+  { "Home" = "index.md" },
+  { "Get started" = [
+    { "Installation and your first app" = "guide/getting-started.md" },
+    { "Core concepts" = "guide/concepts.md" },
   ] },
-  { "功能指南" = [
-    { "模組契約" = "guide/modules.md" },
-    { "FastAPI 整合" = "guide/fastapi.md" },
-    { "作用域與資源管理" = "guide/scopes.md" },
-    { "使用 Uvicorn 啟動" = "guide/deployment.md" },
-    { "Security 與 JWT" = "guide/security.md" },
-    { "測試" = "guide/testing.md" },
+  { "Guides" = [
+    { "Modules and contracts" = "guide/modules.md" },
+    { "FastAPI integration" = "guide/fastapi.md" },
+    { "Scopes and cleanup" = "guide/scopes.md" },
+    { "Running with Uvicorn" = "guide/deployment.md" },
+    { "Security and JWT" = "guide/security.md" },
+    { "Testing and overrides" = "guide/testing.md" },
   ] },
-  { "API 參考" = [
-    { "API 一覽" = "reference/index.md" },
-    { "Modules 與 Container" = "reference/modules.md" },
-    { "FastAPI 整合" = "reference/fastapi.md" },
-    { "Security 與 JWT" = "reference/security.md" },
+  { "API reference" = [
+    { "Overview" = "reference/index.md" },
+    { "Modules and container" = "reference/modules.md" },
+    { "FastAPI integration" = "reference/fastapi.md" },
+    { "Security and JWT" = "reference/security.md" },
     { "Errors" = "reference/errors.md" },
   ] },
-  { "範例" = "examples/index.md" },
+  { "Examples" = "examples/index.md" },
 ]
 
 [project.theme]
-language = "zh-TW"
+language = "en"
 features = [
   "navigation.tabs",
   "navigation.sections",

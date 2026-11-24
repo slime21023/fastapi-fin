@@ -1,10 +1,10 @@
-# FastAPI 整合
+# FastAPI integration
 
-`FastAPIIntegration`、`Inject`、`CONTAINER_STATE_KEY` 和 `FastAPISecurity` 可從 `fastapi_fin` 或 `fastapi_fin.adapters` 匯入。認證與授權 API 另見[安全性參考](security.md)。
+`FastAPIIntegration`, `Inject`, `CONTAINER_STATE_KEY`, and `FastAPISecurity` can be imported from `fastapi_fin` or `fastapi_fin.adapters`. For the authentication and authorization APIs, see also the [security reference](security.md).
 
 ## `FastAPIIntegration(application)`
 
-`application` 必須是 `Application`，否則拋出 `AdapterError`。整合物件不可重新賦值；實際的容器在 lifespan 啟動時才建立。
+`application` must be an `Application`; otherwise `AdapterError` is raised. The integration object cannot be reassigned; the actual container is created when the lifespan starts.
 
 ### `lifespan(app)`
 
@@ -13,20 +13,20 @@ integration = FastAPIIntegration(application)
 app = FastAPI(lifespan=integration.lifespan)
 ```
 
-這個非同步 context manager 接收 `FastAPI` 實例，啟動時建立新的 Dishka 容器、檢查路由的注入，並 yield `dict[str, object]`。整合物件擁有根容器，離開 lifespan 時關閉它。傳入其他型別會拋出 `AdapterError`。
+This async context manager takes a `FastAPI` instance, creates a new Dishka container at startup, checks route injections, and yields a `dict[str, object]`. The integration object owns the root container and closes it when the lifespan exits. Passing any other type raises `AdapterError`.
 
-`CONTAINER_STATE_KEY` 值為 `"fastapi_fin_container"`，是 lifespan state 字典中根容器的鍵，不是 `app.state` 欄位。組合自己的 lifespan 時，應保留這個鍵和值，讓 ASGI 將它傳入 `request.state`。完整用法見 [FastAPI 整合指南](../guide/fastapi.md)。
+`CONTAINER_STATE_KEY` has the value `"fastapi_fin_container"` and is the key of the root container in the lifespan state dictionary; it is not an `app.state` field. When you compose your own lifespan, keep this key and value so that ASGI passes it to `request.state`. For full usage, see the [FastAPI integration guide](../guide/fastapi.md).
 
-### 啟動驗證範圍
+### Startup validation scope
 
-- 檢查 FastAPI HTTP 路由能辨識的 `Inject`，包含參數、巢狀 `Depends` 或 `Security`，及路由與 router 設定的依賴。偵測到未匯出的合約會拋出 `AssemblyError`。
-- WebSocket 不支援 `Inject`；啟動時偵測到使用會拋出 `AdapterError`。
-- 不走訪 mounted sub-app 的路由。掛載的 HTTP routes 可以從宿主 ASGI lifespan state 取得容器，但其注入不會由宿主在啟動時驗證。
+- Checks every `Inject` that FastAPI HTTP routes can recognize, including parameters, nested `Depends` or `Security`, and dependencies set on routes and routers. Detecting an unexported contract raises `AssemblyError`.
+- WebSocket does not support `Inject`; detecting its use at startup raises `AdapterError`.
+- Routes of mounted sub-apps are not traversed. Mounted HTTP routes can obtain the container from the host ASGI lifespan state, but the host does not validate their injections at startup.
 
 ## `Inject[T]`
 
-在參數註記中使用 `Inject[T]`，其中 `T` 是已匯出的服務合約。對型別檢查器而言參數型別為 `T`；執行期建立 `Annotated[T, Depends(...)]`，由 FastAPI 執行依賴，從 Dishka REQUEST scope 取得物件。同一 HTTP request 內的注入共用同一個 REQUEST scope。字串、`None` 或不可雜湊的合約鍵會拋出 `AdapterError`；請求時找不到作用中的根容器也會拋出 `AdapterError`。
+Use `Inject[T]` in a parameter annotation, where `T` is an exported service contract. To a type checker the parameter type is `T`; at runtime it creates `Annotated[T, Depends(...)]`, FastAPI runs the dependency, and the object is obtained from the Dishka REQUEST scope. Injections within the same HTTP request share the same REQUEST scope. A string, `None`, or unhashable contract key raises `AdapterError`; so does failing to find an active root container at request time.
 
-`Request` 由整合宣告為 `Scope.REQUEST` 的 context，並在開啟請求 scope 時放入當前請求。模組如需在 provider 中使用它，可宣告 `requires=(Request,)`；endpoint 則可直接用 FastAPI 原生的 `request: Request`，不使用 `Inject[Request]`。
+`Request` is a context declared by the integration as `Scope.REQUEST`, and the current request is supplied when the request scope is opened. A module that needs it in a provider can declare `requires=(Request,)`; an endpoint can use FastAPI's native `request: Request` directly instead of `Inject[Request]`.
 
-整合不新增 middleware、不改寫 route class、不包裝 endpoint。`Inject[T]` 本身不會成為 OpenAPI 請求參數或 request body；路由、驗證、OpenAPI 與例外處理仍由 FastAPI 管理。
+The integration adds no middleware, does not rewrite the route class, and does not wrap endpoints. `Inject[T]` itself does not become an OpenAPI request parameter or request body; routing, validation, OpenAPI, and exception handling remain managed by FastAPI.

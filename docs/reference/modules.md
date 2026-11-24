@@ -1,6 +1,6 @@
-# 模組與容器
+# Modules and container
 
-以下 API 皆可從 `fastapi_fin` 匯入，不依賴 FastAPI。Provider、scope、解析與資源生命週期使用 Dishka 的 API。
+All of the following APIs can be imported from `fastapi_fin` and do not depend on FastAPI. Providers, scopes, resolution, and resource lifecycle use Dishka's API.
 
 ## `Module`
 
@@ -13,12 +13,12 @@ Module(
 )
 ```
 
-- `name` 去除前後空白後必須非空，並作為 Dishka component 名稱。空字串保留給 Dishka 預設 component。
-- `providers` 為 Dishka `Provider` 實例。不要自行為 provider 設定非預設 component 或使用 `from_context`；前者由模組分配，後者由容器宣告。
-- `exports` 列出其他模組和呼叫端可取得的服務合約；`requires` 列出要從其他模組或傳入的 context 取得的合約。這裡的合約是可作為 Dishka 鍵的型別提示（例如 `Protocol`、ABC 或具體型別），不是 OpenAPI schema。
-- 合約鍵不得是字串或 `None`，也必須可雜湊。同一欄位不能有重複鍵，模組也不能同時匯出及匯入同一鍵。
+- `name` must be non-empty after leading and trailing whitespace is stripped, and is used as the Dishka component name. The empty string is reserved for Dishka's default component.
+- `providers` are Dishka `Provider` instances. Do not set a non-default component on a provider or use `from_context` yourself: the module assigns the former, and the container declares the latter.
+- `exports` lists the service contracts that other modules and callers can obtain; `requires` lists the contracts to obtain from other modules or from the supplied context. A contract here is a type hint usable as a Dishka key (e.g. a `Protocol`, an ABC, or a concrete type), not an OpenAPI schema.
+- A contract key must not be a string or `None`, and must be hashable. A field cannot contain duplicate keys, and a module cannot both export and require the same key.
 
-集合輸入正規化成 tuple；宣告不可重新賦值，但不是 provider 實例的深層複本。欄位錯誤會拋出 `DefinitionError`。
+Collection inputs are normalized to tuples; a declaration cannot be reassigned, but it is not a deep copy of the provider instances. Invalid fields raise `DefinitionError`.
 
 ## `Application`
 
@@ -26,27 +26,27 @@ Module(
 Application(modules: tuple[Module, ...] = (), overrides: Mapping[object, object] = {})
 ```
 
-`modules` 正規化成 tuple，且只接受 `Module`。`exports` 是唯讀的 `Mapping[object, str]`，從合約映射至匯出模組名稱。`overrides` 是唯讀的淺層快照，從合約映射至替代實例。
+`modules` is normalized to a tuple and accepts only `Module` instances. `exports` is a read-only `Mapping[object, str]` that maps each contract to the name of the module that exports it. `overrides` is a read-only shallow snapshot that maps each contract to its replacement instance.
 
-重複模組名稱、跨模組重複匯出合約，或覆寫未匯出的合約，會在建立 `Application` 時拋出 `AssemblyError`。`requires` 是否滿足，要等到建置容器時才檢查，因為當時才知道 context 宣告。
+Duplicate module names, a contract exported by more than one module, or an override of a contract that is not exported raise `AssemblyError` when the `Application` is created. Whether `requires` is satisfied is checked only when the container is built, because context declarations are known only then.
 
 ### `with_overrides(overrides)`
 
-接收 `Mapping[object, object]`，回傳新的 `Application`；原物件不變，同鍵以新值為準。替代實例在 APP scope 可用，對預設 component、匯出模組本身及透過 `requires` 匯入的模組都生效。容器使用呼叫端提供的實例，不負責其清理，也不會呼叫原合約 factory 來產生替身。
+Takes a `Mapping[object, object]` and returns a new `Application`; the original is unchanged, and for the same key the new value wins. Replacement instances are available in the APP scope and take effect for the default component, the exporting module itself, and modules that import the contract through `requires`. The container uses the instance supplied by the caller and is not responsible for its cleanup; it does not call the original contract's factory to produce a fake.
 
-## `build_container()` 與 `open_container()`
+## `build_container()` and `open_container()`
 
 ```python
 build_container(application, *, context={}) -> AsyncContainer
-open_container(application, *, context={})  # async context manager，yield AsyncContainer
+open_container(application, *, context={})  # async context manager, yields AsyncContainer
 ```
 
-`application` 必須是 `Application`。`context` 是從合約鍵映射至 Dishka `BaseScope` 的 `Mapping[object, BaseScope]`，用來宣告值的型別與所在 scope，不是值本身。例如 `context={Job: Scope.REQUEST}`，之後用 `async with root(context={Job: job}, scope=Scope.REQUEST) as request:` 傳入值。這兩個函式不接受 APP scope 的 context 值。
+`application` must be an `Application`. `context` is a `Mapping[object, BaseScope]` that maps a contract key to a Dishka `BaseScope`; it declares the type and scope of a value, not the value itself. For example, `context={Job: Scope.REQUEST}`, and then pass the value with `async with root(context={Job: job}, scope=Scope.REQUEST) as request:`. These two functions do not accept context values in the APP scope.
 
-預設 component 可解析匯出合約與已宣告的 context；各模組預設在自身 component 解析，並藉 `requires` 取得組裝時建立的匯入 alias。容器不會替一般的未匯出依賴建立跨 component 的 alias；這不是權限控制，不會阻止程式使用 Dishka 明確指定 component 的方式取用物件。
+The default component can resolve exported contracts and declared context; each module resolves in its own component by default, and obtains the imported aliases created at assembly time through `requires`. The container does not create cross-component aliases for ordinary unexported dependencies; this is not access control and does not prevent code from reaching an object by explicitly naming a component through Dishka.
 
-無效 context 宣告會拋出 `DefinitionError`。未滿足的 `requires`、context 與匯出鍵衝突，或不是 `Application` 的輸入會拋出 `AssemblyError`。建置使用 Dishka 的嚴格驗證；`InvalidGraphError` 與 `AliasedFactoryNotFoundError` 會包裝成 `AssemblyError`，其餘 Dishka 例外不作此轉換。
+An invalid context declaration raises `DefinitionError`. An unsatisfied `requires`, a conflict between context and an exported key, or an input that is not an `Application` raises `AssemblyError`. The build uses Dishka's strict validation; `InvalidGraphError` and `AliasedFactoryNotFoundError` are wrapped as `AssemblyError`, and other Dishka exceptions are not converted.
 
-呼叫 `build_container()` 後，根容器由呼叫端負責 `await container.close()`；使用 `async with open_container(...)` 則會在離開時自動關閉。子 scope 由進入該 scope 的程式碼管理。容器是非同步的；同步 factory 仍可使用，但在事件迴圈上直接執行。
+After `build_container()`, the caller is responsible for `await container.close()` on the root container; `async with open_container(...)` closes it automatically on exit. Child scopes are managed by the code that enters them. The container is asynchronous; synchronous factories still work but run directly on the event loop.
 
-參見[模組指南](../guide/modules.md)、[生命週期與 scope](../guide/scopes.md)與[錯誤](errors.md)。
+See the [module guide](../guide/modules.md), [lifecycle and scopes](../guide/scopes.md), and [Errors](errors.md).

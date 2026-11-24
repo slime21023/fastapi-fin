@@ -1,36 +1,36 @@
-# 使用 Uvicorn 啟動
+# Running with Uvicorn
 
-FastAPI-Fin 只需要 ASGI lifespan，所以用 Uvicorn 啟動與一般 FastAPI app 相同；不需要額外的設定、middleware 或啟動腳本。
+FastAPI-Fin needs only the ASGI lifespan, so running it with Uvicorn is the same as for an ordinary FastAPI app; no extra configuration, middleware, or startup script is needed.
 
-## 啟動
+## Start
 
-將[快速入門](getting-started.md)的 app 存成 `main.py`，並確定 `app = FastAPI(lifespan=FastAPIIntegration(...).lifespan)` 位於模組層級：
+Save the app from [Getting started](getting-started.md) as `main.py`, and make sure `app = FastAPI(lifespan=FastAPIIntegration(...).lifespan)` is at module level:
 
 ```console
 uvicorn main:app
 ```
 
-多個 worker 同樣可用：
+Multiple workers also work:
 
 ```console
 uvicorn main:app --workers 2
 ```
 
-這些情境由 `tests/integration/test_uvicorn.py` 以真實的 Uvicorn 伺服器自動驗證，並在 CI 執行：單行程與 `--workers 2` 的命令列啟動、以程式啟動的 `uvicorn.Server`、優雅關閉後的資源清理，以及啟動驗證失敗。
+These scenarios are verified automatically against a real Uvicorn server by `tests/integration/test_uvicorn.py` and run in CI: command-line startup with a single process and with `--workers 2`, a programmatically started `uvicorn.Server`, cleanup after graceful shutdown, and startup validation failure.
 
-## 啟動與關閉時發生什麼事
+## What happens at startup and shutdown
 
-- **啟動**：Uvicorn 進入 lifespan 時，整合會建立新的容器，並掃描路由中的 `Inject`。若路由注入了未匯出的契約，會拋出 `AssemblyError`，Uvicorn 印出 `Application startup failed. Exiting.` 並以非零狀態結束，不會開始接受請求。
-- **關閉**：Uvicorn 收到 `SIGINT`／`SIGTERM` 或自行要求結束時，會關閉 lifespan，容器隨之關閉，`Scope.APP` 的 generator 工廠會執行清理。強制終止行程（例如 `kill -9`、Windows 的 `TerminateProcess`）不會執行清理。
-- **每個請求**：`Inject` 為該請求進入 `Scope.REQUEST` 子容器，請求結束時清理該 scope 的資源。
+- **Startup**: when Uvicorn enters the lifespan, the integration creates a new container and scans the routes for `Inject`. If a route injects an unexported contract, `AssemblyError` is raised, Uvicorn prints `Application startup failed. Exiting.` and exits with a non-zero status, and no requests are accepted.
+- **Shutdown**: when Uvicorn receives `SIGINT`/`SIGTERM` or asks to exit by itself, it closes the lifespan, the container closes with it, and generator factories in `Scope.APP` run their cleanup. Forcibly terminating the process (e.g. `kill -9`, or `TerminateProcess` on Windows) does not run cleanup.
+- **Each request**: `Inject` enters a `Scope.REQUEST` child container for that request, and the resources of that scope are cleaned up when the request ends.
 
-## 多個 worker
+## Multiple workers
 
-每個 worker 是獨立的行程，各自執行 lifespan、各自建立容器。因此 `Scope.APP` 的實例是「每個 worker 一份」，不是全域單例：連線池會依 worker 數量倍增，記憶體內的快取或計數器不會在 worker 之間共用。需要跨 worker 共用的狀態應放在外部服務，例如資料庫或快取伺服器。
+Each worker is a separate process that runs its own lifespan and builds its own container. Therefore a `Scope.APP` instance exists "once per worker" and is not a global singleton: connection pools multiply with the number of workers, and in-memory caches or counters are not shared between workers. State that must be shared across workers should live in an external service, such as a database or cache server.
 
-## 在啟動時建立 APP 資源
+## Create APP resources at startup
 
-`Scope.APP` 的工廠在第一次被解析時才會執行，不會在 lifespan 啟動時自動執行。需要在開始接受請求前確認資料庫能連線時，在自己的 lifespan 中預先解析已匯出的契約；根容器放在整合交出的 state 的 `CONTAINER_STATE_KEY` 鍵：
+A `Scope.APP` factory runs the first time it is resolved, not automatically when the lifespan starts. To confirm that the database is reachable before accepting requests, resolve the exported contract ahead of time in your own lifespan; the root container is under the `CONTAINER_STATE_KEY` key of the state yielded by the integration:
 
 ```python
 from collections.abc import AsyncIterator
@@ -40,23 +40,23 @@ from fastapi import FastAPI
 
 from fastapi_fin import CONTAINER_STATE_KEY, FastAPIIntegration
 
-integration = FastAPIIntegration(application)  # 你的 Application，且已匯出 Database
+integration = FastAPIIntegration(application)  # your Application, with Database exported
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[dict[str, object]]:
     async with integration.lifespan(app) as state:
-        await state[CONTAINER_STATE_KEY].get(Database)  # 失敗時，Uvicorn 不會開始服務
+        await state[CONTAINER_STATE_KEY].get(Database)  # on failure, Uvicorn does not start serving
         yield state
 
 
 app = FastAPI(lifespan=lifespan)
 ```
 
-預先解析只適用 `Scope.APP` 的匯出契約；`Scope.REQUEST` 的服務必須在請求的子容器內解析。
+Early resolution applies only to exported contracts in `Scope.APP`; `Scope.REQUEST` services must be resolved inside the request's child container.
 
-## 驗證範圍
+## Verification coverage
 
-- CI 的測試矩陣（Linux；Python 3.12 與 3.13；FastAPI 0.115.11 搭配 Starlette 0.46.2，以及 FastAPI 0.141.1 搭配 Starlette 1.3.1）會以鎖定的 Uvicorn 執行這些測試。
-- 另以手動驗證過 FastAPI 0.141.1 搭配 Uvicorn 0.24.0、0.27.1、0.28.1 與 0.29.0；這些版本不在 CI 矩陣內。
-- 未驗證 `--reload`、其他 ASGI 伺服器（如 Hypercorn）與 Gunicorn 的 Uvicorn worker。
+- The CI test matrix (Linux; Python 3.12 and 3.13; FastAPI 0.115.11 with Starlette 0.46.2, and FastAPI 0.141.1 with Starlette 1.3.1) runs these tests against the locked Uvicorn.
+- FastAPI 0.141.1 with Uvicorn 0.24.0, 0.27.1, 0.28.1, and 0.29.0 was also verified manually; these versions are not in the CI matrix.
+- `--reload`, other ASGI servers (such as Hypercorn), and Gunicorn's Uvicorn workers are not verified.

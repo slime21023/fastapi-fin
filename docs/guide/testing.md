@@ -1,18 +1,18 @@
-# 測試與替換實作
+# Testing and overrides
 
-`Application.with_overrides({Contract: fake})` 以公開契約替換物件，而不必改動路由、
-providers 或既有 `Application`。鍵必須是已匯出的契約，值是準備好的實例，不是工廠。
-替身以 `Scope.APP` 提供：HTTP 注入、其他模組的匯入，以及匯出模組內對該契約的依賴，
-都取得同一個物件。若多次替換同一契約，以後一次為準。
+`Application.with_overrides({Contract: fake})` replaces an object behind a public contract without changing routes,
+providers or the existing `Application`. The key must be an exported contract, and the value is a prepared instance, not a factory.
+The fake is provided in `Scope.APP`: HTTP injection, requires from other modules, and dependencies on that contract inside the exporting module
+all receive the same object. If the same contract is overridden more than once, the last override wins.
 
-每個測試可建立自己的替身與 `Application`，避免跨測試共享可變狀態。即使建立新容器，
-容器也會使用你傳入的物件，不會複製它。
+Each test can create its own fake and `Application`, which avoids sharing mutable state across tests. Even when a new container is created,
+the container uses the object you passed in and does not copy it.
 
-## 不啟動 FastAPI
+## Without starting FastAPI
 
-下例沿用[快速入門](getting-started.md)存為 `app.py` 的範例。使用 `open_container()`
-直接驗證依賴組裝與替換；若要讓測試完全不匯入 FastAPI，將模組宣告和服務型別放到
-獨立的 Python 模組，再由 HTTP 入口與測試共同匯入。
+The example below reuses the example saved as `app.py` in [Getting started](getting-started.md). Use `open_container()`
+to verify dependency assembly and overrides directly. To keep a test from importing FastAPI at all, put the module declarations and service types
+in a separate Python module that both the HTTP entry point and the tests import.
 
 ```python
 import asyncio
@@ -23,7 +23,7 @@ from fastapi_fin import open_container
 
 
 def test_directory_override() -> None:
-    fake = InMemoryDirectory({42: "測試使用者"})
+    fake = InMemoryDirectory({42: "Test user"})
 
     async def check() -> None:
         async with open_container(application.with_overrides({UserDirectory: fake})) as root:
@@ -32,12 +32,12 @@ def test_directory_override() -> None:
     asyncio.run(check())
 ```
 
-若要測試 `Scope.REQUEST` 的服務，請先進入[子作用域](scopes.md)。
+To test `Scope.REQUEST` services, first read about [child scopes](scopes.md).
 
-## 測試 HTTP 行為
+## Testing HTTP behavior
 
-把替換後的宣告傳給 app factory；用 `with TestClient(...)` 執行 lifespan，
-讓請求收到容器所需的 ASGI state，並在測試結束時清理資源。
+Pass the overridden declaration to the app factory. Use `with TestClient(...)` to run the lifespan,
+so requests receive the ASGI state the container needs and resources are cleaned up when the test ends.
 
 ```python
 from fastapi.testclient import TestClient
@@ -46,18 +46,18 @@ from app import InMemoryDirectory, UserDirectory, application, create_app
 
 
 def test_get_user() -> None:
-    fake = InMemoryDirectory({42: "測試使用者"})
+    fake = InMemoryDirectory({42: "Test user"})
     app = create_app(application.with_overrides({UserDirectory: fake}))
 
     with TestClient(app) as client:
         response = client.get("/users/42")
 
     assert response.status_code == 200
-    assert response.json() == {"name": "測試使用者"}
+    assert response.json() == {"name": "Test user"}
 ```
 
-## 本專案的測試分層
+## Test layers in this project
 
-- Unit：不使用 FastAPI，驗證模組宣告、Dishka 依賴圖與資源清理。
-- Contract：用 `TestClient` 與 lifespan 驗證原生路由、HTTP 注入與 OpenAPI 行為。
-- Integration：執行[範例](../examples/index.md)，確認完整流程能在實際組裝後運作。
+- Unit: no FastAPI; verifies module declarations, the Dishka dependency graph and cleanup.
+- Contract: uses `TestClient` and the lifespan to verify native routes, HTTP injection and OpenAPI behavior.
+- Integration: runs the [examples](../examples/index.md) to confirm the full flow works after real assembly.

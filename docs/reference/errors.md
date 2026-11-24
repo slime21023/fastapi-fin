@@ -1,6 +1,6 @@
-# 錯誤
+# Errors
 
-## 例外階層與匯入位置
+## Exception hierarchy and import locations
 
 ```text
 FastAPIFinError
@@ -16,27 +16,27 @@ FastAPIFinError
       └─ InsufficientScopeError
 ```
 
-`fastapi_fin.errors` 只匯出 `FastAPIFinError`、`DefinitionError`、`AssemblyError` 和 `AdapterError`；`SecurityError` 及其子類別由 `fastapi_fin.security` 匯出。以上名稱也可從 `fastapi_fin` 匯入。
+`fastapi_fin.errors` exports only `FastAPIFinError`, `DefinitionError`, `AssemblyError`, and `AdapterError`; `SecurityError` and its subclasses are exported by `fastapi_fin.security`. All of these names can also be imported from `fastapi_fin`.
 
-## 宣告、組裝與整合
+## Declaration, assembly, and integration
 
-| 例外 | 發生時機與處理責任 |
+| Exception | When it is raised and who handles it |
 | --- | --- |
-| `DefinitionError` | `Module`、`Application` 的欄位格式不合法，例如空模組名稱、重複合約項目或 provider 自行設定 component；也用於 `build_container()` 的無效 context 宣告，以及 JWT、policy 的無效設定。修正輸入。 |
-| `AssemblyError` | `Application` 偵測到重複模組名稱、重複匯出，或覆寫目標並未匯出；`build_container()` 偵測未滿足的 `requires`、context 與匯出衝突，或收到非 `Application` 的值。指定的 Dishka graph 例外會封裝為 `AssemblyError`，原始錯誤保留在 `__cause__`。FastAPI lifespan 也會在偵測到路由注入未匯出的合約時拋出此錯誤。修正組裝與依賴宣告。 |
-| `AdapterError` | `Inject[T]` 收到字串、`None` 或不可雜湊的合約鍵、整合物件或 lifespan 參數型別不符、啟動時偵測到 WebSocket 使用 `Inject`、請求沒有可用的容器，或安全性 adapter 設定無效。修正整合方式；這不是預期的 HTTP 認證失敗。 |
+| `DefinitionError` | A `Module` or `Application` field has an invalid format, e.g. an empty module name, a duplicate contract entry, or a provider that sets its own component; also used for an invalid context declaration in `build_container()` and for invalid JWT or policy settings. Fix the input. |
+| `AssemblyError` | `Application` detects a duplicate module name, a duplicate export, or an override target that is not exported; `build_container()` detects an unsatisfied `requires`, a conflict between context and an export, or receives a value that is not an `Application`. Specific Dishka graph exceptions are wrapped as `AssemblyError`, with the original error kept in `__cause__`. The FastAPI lifespan also raises this error when it detects a route injecting an unexported contract. Fix the assembly and dependency declarations. |
+| `AdapterError` | `Inject[T]` receives a string, `None`, or unhashable contract key; the integration object or lifespan argument has the wrong type; a WebSocket using `Inject` is detected at startup; a request has no available container; or the security adapter is configured invalidly. Fix the integration; this is not an expected HTTP authentication failure. |
 
-容器解析與 provider factory 的執行例外不會由 FastAPI-Fin 另行封裝，也不會被轉成固定格式的 `500` 回應。直接操作容器時由呼叫端處理；在 HTTP 請求中則遵循 FastAPI 的例外處理機制。容器與 scope 的清理錯誤由 Dishka 回報。
+Exceptions raised while resolving from the container or running provider factories are not wrapped by FastAPI-Fin, and are not converted into a fixed-format `500` response. When you operate the container directly, the caller handles them; in an HTTP request they follow FastAPI's exception handling. Container and scope cleanup errors are reported by Dishka.
 
-## 安全性例外
+## Security exceptions
 
-| 例外 | 意義 |
+| Exception | Meaning |
 | --- | --- |
-| `SecurityDependencyError` | 使用 JWT 時無法載入 PyJWT；安裝 `fastapi-fin[security]`。這是部署問題，不是無效 token。 |
-| `AuthenticationError` | 憑證無法通過認證。客製 `TokenAuthenticator` 可用此例外表示預期的認證失敗。 |
-| `MissingCredentialsError` | 表示沒有提供憑證，供不依賴 FastAPI 的認證程式使用。 |
-| `InvalidTokenError` | 表示 token 格式、簽章或信任條件不符，或 principal 欄位無效。 |
-| `AuthorizationError` | 已認證的 principal 不符合授權政策。 |
-| `InsufficientScopeError` | 授權所需 scope 不足；`required_scopes` 是建立例外時傳入的 scope tuple。`PrincipalPolicy.enforce()` 傳入缺少的項目。 |
+| `SecurityDependencyError` | PyJWT cannot be loaded when using JWT; install `fastapi-fin[security]`. This is a deployment problem, not an invalid token. |
+| `AuthenticationError` | The credentials fail authentication. A custom `TokenAuthenticator` can use this exception to signal an expected authentication failure. |
+| `MissingCredentialsError` | No credentials were provided; for authentication code that does not depend on FastAPI. |
+| `InvalidTokenError` | The token format, signature, or trust conditions do not match, or a principal field is invalid. |
+| `AuthorizationError` | The authenticated principal does not satisfy the authorization policy. |
+| `InsufficientScopeError` | The scopes required for authorization are insufficient; `required_scopes` is the scope tuple passed when the exception is created. `PrincipalPolicy.enforce()` passes the missing items. |
 
-`FastAPISecurity` 將缺少 bearer 憑證、`authenticate()` 拋出的 `AuthenticationError`，或 authenticator 未回傳 `AuthenticatedPrincipal` 的情況轉成 `401`。Adapter 偵測到 scope 不足，或 `require()` 執行 policy 拋出 `InsufficientScopeError` 時，會傳回含 `insufficient_scope` 的 `403`；其他由 policy 拋出的 `AuthorizationError` 轉成 `403`。這些映射只發生在該 adapter 的認證與授權流程，不是全域例外攔截器。詳見[安全性參考](security.md)。
+`FastAPISecurity` converts a missing bearer credential, an `AuthenticationError` raised by `authenticate()`, or an authenticator that does not return an `AuthenticatedPrincipal` into a `401`. When the adapter detects insufficient scope, or when `require()` runs a policy that raises `InsufficientScopeError`, it returns a `403` containing `insufficient_scope`; any other `AuthorizationError` raised by a policy becomes a `403`. These mappings occur only within that adapter's authentication and authorization flow; it is not a global exception handler. See the [security reference](security.md) for details.

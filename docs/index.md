@@ -1,11 +1,10 @@
 # FastAPI-Fin
 
-FastAPI-Fin 是 Dishka 與 FastAPI 之間的契約組裝層。服務先定義介面，模組宣告 exports 和 requires，組裝點才選擇實作。FastAPI 管理路由、驗證與 OpenAPI；Dishka 管理依賴作用域與清理。
+FastAPI-Fin is a contract assembly layer between Dishka and FastAPI. Services define interfaces first, modules declare exports and requires, and the assembly point chooses the implementation. FastAPI manages routing, validation, and OpenAPI; Dishka manages dependency scopes and cleanup.
 
-- [安裝與第一個 App](guide/getting-started.md)
-- [模組契約](guide/modules.md)
-- [作用域與資源管理](guide/scopes.md)
-- [使用 Uvicorn 啟動](guide/deployment.md)
-- [替換契約與測試](guide/testing.md)
-- [可執行範例](examples/index.md)
-
+- [Installation and your first app](guide/getting-started.md)
+- [Modules and contracts](guide/modules.md)
+- [Scopes and cleanup](guide/scopes.md)
+- [Running with Uvicorn](guide/deployment.md)
+- [Testing and overrides](guide/testing.md)
+- [Examples](examples/index.md)

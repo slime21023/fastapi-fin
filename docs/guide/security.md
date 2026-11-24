@@ -1,15 +1,15 @@
-# Security 與 JWT
+# Security and JWT
 
-FastAPI-Fin 將 authentication 與 authorization 分開。JWT 只負責 token 的簽發與驗證，
-scope、role 與 resource policy 則由獨立的 authorization policy 處理。
+FastAPI-Fin keeps authentication and authorization separate. JWT only issues and verifies tokens;
+scopes, roles and resource policies are handled by independent authorization policies.
 
-JWT 支援是 optional dependency：
+JWT support is an optional dependency:
 
 ```console
 pip install "fastapi-fin[security]"
 ```
 
-## 建立 JWT issuer 與 verifier
+## Creating a JWT issuer and verifier
 
 ```python
 from datetime import timedelta
@@ -35,9 +35,9 @@ token = issuer.issue("user-1", scopes=("tasks:read",), roles=("admin",))
 principal = verifier.authenticate(token)
 ```
 
-依預設，`JwtVerifier` 會驗證簽章與演算法允許清單、`iss`、`aud`、時間宣告 `exp` 與 `iat`、身分欄位 `sub`、token ID `jti`，以及 header 的 `typ`（預設 `at+jwt`）。對稱式演算法的簽發與驗證使用相同密鑰；不要從 token header 決定允許的演算法，也不要把 JWT 當成加密資料。
+By default, `JwtVerifier` validates the signature and the algorithm allowlist, `iss`, `aud`, the time claims `exp` and `iat`, the identity claim `sub`, the token ID `jti`, and the header `typ` (default `at+jwt`). Symmetric algorithms use the same key for issuing and verifying. Do not take the allowed algorithms from the token header, and do not treat a JWT as encrypted data.
 
-若多個服務只需要驗證而不應持有簽發私鑰，可使用非對稱簽章：簽發端持有私鑰，驗證端持有受信任的公鑰。本地金鑰輪替可以使用不可變的 `JwtKeySet`：
+If several services only need to verify tokens and must not hold the signing private key, use asymmetric signing: the issuer holds the private key and verifiers hold the trusted public keys. For local key rotation, use the immutable `JwtKeySet`:
 
 ```python
 from fastapi_fin.security import JwtKeySet, JwtVerifier
@@ -57,13 +57,13 @@ verifier = JwtVerifier(
 )
 ```
 
-`kid` 只會在已設定的 trusted key set 中查找，不會依照 token 內的 URL 自動抓取外部
-資源。
-若使用這個 RS256 verifier，簽發端也要使用 `RS256`，並以對應的私鑰和 `key_id` 建立 `JwtIssuer`；此 verifier 無法驗證上面以 HS256 簽發的 token。
+`kid` is looked up only in the configured trusted key set; no external resource is fetched
+from a URL in the token.
+If you use this RS256 verifier, the issuer must also use `RS256` and create its `JwtIssuer` with the matching private key and `key_id`; this verifier cannot verify the tokens issued with HS256 above.
 
-## 將認證合約接到 FastAPI
+## Connecting the authentication contract to FastAPI
 
-`JwtVerifier` 已符合 `TokenAuthenticator` 合約。用 Dishka provider 提供該合約，並由模組匯出。`FastAPISecurity` 不直接接收 verifier，而是透過 `Inject[TokenAuthenticator]` 解析它。以下沿用上節選定的 `verifier`：
+`JwtVerifier` already satisfies the `TokenAuthenticator` contract. Provide that contract with a Dishka provider and export it from a module. `FastAPISecurity` does not accept a verifier directly; it resolves it through `Inject[TokenAuthenticator]`. The example below reuses the `verifier` chosen in the previous section:
 
 ```python
 from typing import Annotated
@@ -90,7 +90,7 @@ integration = FastAPIIntegration(Application(modules=(auth,)))
 app = FastAPI(lifespan=integration.lifespan)
 security = FastAPISecurity(
     token_url="/token",
-    scopes={"tasks:read": "讀取工作"},
+    scopes={"tasks:read": "Read tasks"},
 )
 
 
@@ -111,27 +111,28 @@ async def admin_area(
     return {"subject": principal.subject}
 ```
 
-`principal_marker()` 使用 FastAPI `Security` 依賴；有 `token_url` 時使用 OAuth2 password bearer scheme，並把宣告的 scopes 顯示在 OpenAPI 中。`token_url` 指向應用程式或身分服務實作的 token endpoint；adapter 不會建立該路由。省略 `token_url` 則使用 HTTP bearer scheme。
+`principal_marker()` uses the FastAPI `Security` dependency. With `token_url`, it uses the OAuth2 password bearer scheme and shows the declared scopes in OpenAPI. `token_url` points to a token endpoint implemented by the application or an identity service; the adapter does not create that route. Without `token_url`, it uses the HTTP bearer scheme.
 
-`security.require(policy)` 會先認證 bearer token，再檢查 `PrincipalPolicy`。範例中的 `/admin` 要求已驗證的 principal 具有 `admin` 角色，而 `/tasks` 要求 `tasks:read` scope。若需要資源層級授權，例如只能讀取自己建立的工作，應在應用程式查詢或服務中依據 principal 實作。
+`security.require(policy)` first authenticates the bearer token, then checks the `PrincipalPolicy`. In the example, `/admin` requires the authenticated principal to have the `admin` role, and `/tasks` requires the `tasks:read` scope. For resource-level authorization, such as allowing users to read only the tasks they created, implement the check in application queries or services based on the principal.
 
-- 缺少或無效 token：`401`，附帶 `WWW-Authenticate: Bearer`。
-- token 有效但 scope 不足：`403`，附帶 `WWW-Authenticate` 的 `insufficient_scope` 資訊。
-- 通過 scope 檢查但角色不符：`403`。
+- Missing or invalid token: `401` with `WWW-Authenticate: Bearer`.
+- Valid token but insufficient scope: `403` with `insufficient_scope` information in `WWW-Authenticate`.
+- Scope check passes but the role does not match: `403`.
 
-可改由其他 provider 提供同步或非同步的 `TokenAuthenticator`。預期的憑證拒絕應拋出 `AuthenticationError`（例如 `InvalidTokenError`），而非吞掉服務錯誤。未匯出 `TokenAuthenticator` 時，只要啟動驗證在路由上找到該認證依賴，lifespan 就會拋出 `AssemblyError`。
+Another provider can supply a synchronous or asynchronous `TokenAuthenticator` instead. An expected credential rejection should raise `AuthenticationError` (e.g. `InvalidTokenError`) rather than swallowing service errors. If `TokenAuthenticator` is not exported, the lifespan raises `AssemblyError` as long as startup validation finds the authentication dependency on a route.
 
-## Token lifecycle 邊界
+## Token lifecycle boundaries
 
-目前 JWT issuer/verifier 不負責：
+The JWT issuer and verifier currently do not handle:
 
-- 使用者密碼儲存與登入資料庫
+- user password storage and login databases
 - refresh token rotation
-- logout 或即時 token revocation
-- 外部 OIDC provider discovery
+- logout or immediate token revocation
+- external OIDC provider discovery
 
-這些應由 application provider 或外部 identity service 實作。Access token 建議短效；
-需要即時撤銷時，應增加 revocation store 或採用 opaque refresh/session token，而不是
-假設 JWT 可以自行 logout。
+These should be implemented by an application provider or an external identity service. Short-lived
+access tokens are recommended; if you need immediate revocation, add a revocation store or use
+opaque refresh/session tokens instead of
+assuming a JWT can log itself out.
 
-可執行範例請參考 [`06_security_jwt.py`](https://github.com/slime21023/fastapi-fin/blob/main/examples/06_security_jwt.py)；完整簽章、認證與授權 API 見[安全性參考](../reference/security.md)。
+For a runnable example, see [`06_security_jwt.py`](https://github.com/slime21023/fastapi-fin/blob/main/examples/06_security_jwt.py); for the full signing, authentication and authorization API, see the [security reference](../reference/security.md).
