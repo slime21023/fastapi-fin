@@ -1,29 +1,25 @@
 """HTTP endpoints for the complete Task API example."""
 
-from fastapi_fin.application import ApplicationRouter, inject
-from fastapi_fin.features import GuardDefinition
+from fastapi import APIRouter
 
-from . import policies
-from .domain import TaskCreate, TaskView
-from .providers import TaskService
+from fastapi_fin import FastAPISecurity, Inject, require_roles
 
-SERVICE = inject(TaskService)
-router = ApplicationRouter(prefix="/tasks", tags=("tasks",))
+from .domain import TaskCreate, TaskService, TaskView
+
+security = FastAPISecurity()
+router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
-@router.get("/", response_model=list[TaskView])
-def list_tasks(service: TaskService = SERVICE) -> list[TaskView]:
+@router.get("", response_model=list[TaskView])
+async def list_tasks(service: Inject[TaskService]) -> list[TaskView]:
     return service.list()
 
 
 @router.post(
-    "/",
+    "",
     response_model=TaskView,
     status_code=201,
-    guards=(GuardDefinition(policies.admin_only, name="admin-only"),),
+    dependencies=[security.require(require_roles("admin"))],
 )
-def create_task(
-    payload: TaskCreate,
-    service: TaskService = SERVICE,
-) -> TaskView:
+async def create_task(payload: TaskCreate, service: Inject[TaskService]) -> TaskView:
     return service.create(payload)

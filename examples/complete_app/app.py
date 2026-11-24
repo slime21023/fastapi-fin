@@ -1,68 +1,58 @@
 """Application assembly and executable demo for the complete Task API."""
 
+from secrets import token_hex
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fastapi_fin.adapters import FastAPIAdapter
-from fastapi_fin.application import (
-    ApplicationDefinition,
-    LifecycleDefinition,
-    Scope,
-    provide,
-)
-from fastapi_fin.features import InterceptorDefinition
+from fastapi_fin import Application, FastAPIIntegration, JwtIssuer
 
-from . import lifecycle, policies, providers
+from .providers import JWT_AUDIENCE, JWT_ISSUER, auth_module, tasks_module
 from .routes import router as task_router
 
 
-def build_app() -> FastAPI:
-    definition = ApplicationDefinition(
-        routes=task_router,
-        providers=(
-            provide(
-                providers.TaskRepository,
-                scope=Scope.APPLICATION,
-                eager=True,
-                disposer=providers.close_repository,
-            ),
-            provide(
-                providers.TaskService,
-                dependencies=(providers.TaskRepository,),
-                scope=Scope.REQUEST,
-                disposer=providers.close_service,
-            ),
-        ),
-        interceptors=(InterceptorDefinition(policies.audit, name="audit"),),
-        lifecycle=LifecycleDefinition(
-            startup=(lifecycle.startup,),
-            shutdown=(lifecycle.shutdown,),
-        ),
-    )
-    return FastAPIAdapter.create_app(
-        definition,
+def create_app(application: Application) -> FastAPI:
+    app = FastAPI(
         title="FastAPI-Fin complete Task API",
-        version="1.0.1",
+        version="2.0.0",
+        lifespan=FastAPIIntegration(application).lifespan,
     )
+    app.include_router(task_router)
+    return app
 
 
 def run_demo() -> None:
-    policies.reset_state()
-    providers.reset_state()
-    lifecycle.reset_state()
+    signing_key = token_hex(32)
+    issuer = JwtIssuer(
+        key=signing_key,
+        algorithm="HS256",
+        issuer=JWT_ISSUER,
+        audience=JWT_AUDIENCE,
+    )
+    application = Application(modules=(tasks_module, auth_module(signing_key)))
+    user_token = issuer.issue("reader")
+    admin_token = issuer.issue("admin", roles=("admin",))
+    payload = {"title": "Learn FastAPI-Fin"}
 
-    with TestClient(build_app()) as client:
+    with TestClient(create_app(application)) as client:
         empty = client.get("/tasks")
-        forbidden = client.post("/tasks", json={"title": "Learn FastAPI-Fin"})
+        missing = client.post("/tasks", json=payload)
+        invalid = client.post(
+            "/tasks", json=payload, headers={"Authorization": "Bearer not-a-jwt"}
+        )
+        forbidden = client.post(
+            "/tasks", json=payload, headers={"Authorization": f"Bearer {user_token}"}
+        )
         created = client.post(
-            "/tasks",
-            json={"title": "Learn FastAPI-Fin"},
-            headers={"X-Role": "admin"},
+            "/tasks", json=payload, headers={"Authorization": f"Bearer {admin_token}"}
         )
         tasks = client.get("/tasks")
 
     assert empty.status_code == 200
     assert empty.json() == []
+    assert missing.status_code == 401
+    assert missing.headers["www-authenticate"] == "Bearer"
+    assert invalid.status_code == 401
     assert forbidden.status_code == 403
     assert created.status_code == 201
     assert created.json() == {
@@ -70,14 +60,6 @@ def run_demo() -> None:
         "title": "Learn FastAPI-Fin",
         "completed": False,
     }
+    assert tasks.status_code == 200
     assert tasks.json() == [created.json()]
-    assert policies.audit_log == ["request", "request", "request"]
-    assert lifecycle.events == ["started", "stopped"]
-    assert providers.cleanup_log == [
-        "service-closed",
-        "service-closed",
-        "service-closed",
-        "service-closed",
-        "repository-closed",
-    ]
     print("complete_app: OK")

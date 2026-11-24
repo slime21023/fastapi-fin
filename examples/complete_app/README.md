@@ -11,14 +11,18 @@
 uv run python -m examples.complete_app
 ```
 
+成功時會印出 `complete_app: OK`。範例會用臨時金鑰簽發 JWT 並透過
+`TestClient` 驗證：`GET /tasks` 不需登入；`POST /tasks` 缺少或帶入無效的
+Bearer token 時回傳 `401`，有效 token 若沒有 `admin` 角色則回傳 `403`，
+管理員可建立任務並在清單中看到結果。
+
 ## 閱讀順序
 
-1. `domain.py`：Pydantic request/response models
-2. `providers.py`：application/request provider 與 disposer
-3. `routes.py`：`ApplicationRouter`、endpoint 與 `inject()`
-4. `policies.py`：Guard 與 Interceptor
-5. `lifecycle.py`：startup/shutdown hooks
-6. `app.py`：ApplicationDefinition 組裝與 HTTP smoke test
-
-這個案例刻意將 FastAPI 只放在 `app.py` 的 Adapter boundary；domain、provider
-與 policy 可以在不啟動 FastAPI 的情況下理解與測試。
+1. `domain.py`：Pydantic request/response models 與 `TaskService` Protocol。
+2. `providers.py`：`tasks` module 以 dishka 提供內部的 APP-scope repository，
+   只匯出 REQUEST-scope 的 `TaskService`；`auth` module 匯出
+   `TokenAuthenticator`，由 `JwtVerifier` 實作。
+3. `routes.py`：原生 `APIRouter` 用 `Inject[TaskService]` 取得服務，
+   並用 `FastAPISecurity` 套用管理員角色規則。
+4. `app.py`：`create_app(application)` 以 `FastAPIIntegration.lifespan`
+   裝配 container 並掛載 router；`run_demo()` 組合 modules 並執行 HTTP 驗證。

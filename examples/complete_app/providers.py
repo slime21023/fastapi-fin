@@ -1,12 +1,17 @@
 """Provider implementations for the complete Task API example."""
 
-from .domain import TaskCreate, TaskView
+from dishka import Provider, Scope, provide
 
-cleanup_log: list[str] = []
+from fastapi_fin import JwtVerifier, Module, TokenAuthenticator
+
+from .domain import TaskCreate, TaskService, TaskView
+
+JWT_ISSUER = "https://issuer.example"
+JWT_AUDIENCE = "task-api"
 
 
 class TaskRepository:
-    """An application-scoped in-memory repository used as a deterministic fake."""
+    """In-memory storage shared across requests."""
 
     def __init__(self) -> None:
         self._next_id = 1
@@ -22,26 +27,44 @@ class TaskRepository:
         return list(self._tasks.values())
 
 
-class TaskService:
+class _TaskService:
     """A request-scoped service that depends on the application repository."""
 
     def __init__(self, repository: TaskRepository) -> None:
-        self.repository = repository
+        self._repository = repository
 
     def create(self, payload: TaskCreate) -> TaskView:
-        return self.repository.create(payload)
+        return self._repository.create(payload)
 
     def list(self) -> list[TaskView]:
-        return self.repository.list()
+        return self._repository.list()
 
 
-def close_repository(_repository: object) -> None:
-    cleanup_log.append("repository-closed")
+class _TaskProvider(Provider):
+    repository = provide(TaskRepository, scope=Scope.APP)
+
+    @provide(scope=Scope.REQUEST)
+    def service(self, repository: TaskRepository) -> TaskService:
+        return _TaskService(repository)
 
 
-def close_service(_service: object) -> None:
-    cleanup_log.append("service-closed")
+class _AuthProvider(Provider):
+    def __init__(self, signing_key: str) -> None:
+        super().__init__()
+        self._signing_key = signing_key
+
+    @provide(scope=Scope.APP)
+    def authenticator(self) -> TokenAuthenticator:
+        return JwtVerifier(
+            key=self._signing_key,
+            algorithms=("HS256",),
+            issuer=JWT_ISSUER,
+            audience=JWT_AUDIENCE,
+        )
 
 
-def reset_state() -> None:
-    cleanup_log.clear()
+tasks_module = Module("tasks", providers=(_TaskProvider(),), exports=(TaskService,))
+
+
+def auth_module(signing_key: str) -> Module:
+    return Module("auth", providers=(_AuthProvider(signing_key),), exports=(TokenAuthenticator,))
