@@ -1,29 +1,27 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
-    "fastapi-python": {
-      "source": "mindrally/skills",
+    "clean-code": {
+      "source": "wondelai/skills",
+      "commit": "c37678106e63ef1c5472d848fb3d8b8c5b33fafe",
       "sourceType": "github",
-      "skillPath": "fastapi-python/SKILL.md",
-      "computedHash": "4521c6090735152b7b8df670cefe5c1c6d1dcaa115de67bb96e74ebf802d4f24"
+      "skillPath": "clean-code/SKILL.md",
+      "computedHash": "05c09cd9475e281ef08ffcc11571c50e8cb5fabfa8d6bcdb96ab2d0dbb73a61e",
+      "installMode": "copy"
     },
-    "python-quality": {
-      "source": "claude-dev-suite/claude-dev-suite",
+    "python-best-practices": {
+      "source": "nathan-gage/python-skills",
+      "commit": "c5b961b32447e1be7dedea45ef166e74bb987f77",
       "sourceType": "github",
-      "skillPath": "skills/best-practices/python-quality/SKILL.md",
-      "computedHash": "c3b2154da2f93b9bbec6145d31b81008c9cc8ee7a9a52989390ea8fdc8b546c8"
-    },
-    "python-type-hints": {
-      "source": "josiahsiegel/claude-plugin-marketplace",
-      "sourceType": "github",
-      "skillPath": "plugins/python-master/skills/python-type-hints/SKILL.md",
-      "computedHash": "471d74c35e7468d1a67db44e10237736dd1c8c888983a1b8c3694dd1d6bb5a01"
+      "skillPath": "skills/python-best-practices/SKILL.md",
+      "computedHash": "4e32bb501f857ac1d031455574d9c84f89f2aeaf1346d2b9fd1ad677ef50bdec",
+      "installMode": "copy"
     },
     "reviewing-python-libraries": {
       "source": "wdm0006/python-skills",
       "sourceType": "github",
       "skillPath": "skills/python/library-review/SKILL.md",
-      "computedHash": "661e1354e299bc2ff2c73380750ffc8109ff5faf8e5f5cddb6fa84da120051cc"
+      "computedHash": ""
     }
   }
 }

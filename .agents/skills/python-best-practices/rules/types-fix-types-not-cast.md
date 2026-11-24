@@ -1,0 +1,72 @@
+---
+title: Fix Type Definitions Instead of cast()
+impact: MEDIUM
+impactDescription: keeps source type definitions honest
+tags: types, cast, design
+---
+
+## Fix Type Definitions Instead of `cast()`
+
+`cast(T, value)` tells the checker to pretend `value` is a `T` with no runtime check. When called to paper over a structural mismatch, it hides a design problem. Reach for it only when runtime logic genuinely narrows in a way the checker can't express.
+
+**Incorrect (cast masks an unnecessarily wide return type):**
+
+```python
+from typing import cast
+
+def load_config() -> dict[str, object]:
+    return json.loads(CONFIG_PATH.read_text())
+
+def get_timeout() -> int:
+    config = load_config()
+    return cast(int, config["timeout"])  # we're just telling the checker to trust us
+```
+
+The real issue: `load_config` returns `dict[str, object]` because `json.loads` does. But this project's config has a known shape — fix the source type.
+
+**Correct (declare the real structure; narrow where the runtime evidence exists):**
+
+```python
+from typing import TypedDict, cast
+
+class Config(TypedDict):
+    timeout: int
+    retries: int
+
+def load_config() -> Config:
+    data = json.loads(CONFIG_PATH.read_text())
+    if not (
+        isinstance(data, dict)
+        and _is_int(data.get("timeout"))
+        and _is_int(data.get("retries"))
+    ):
+        raise ValueError(f"malformed config at {CONFIG_PATH}")
+    return cast(Config, data)   # narrowed by the checks above — once, at the parse boundary
+
+def _is_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)  # bool is an int subtype
+
+def get_timeout() -> int:
+    config = load_config()
+    return config["timeout"]  # known to be int from Config
+```
+
+Now every downstream consumer benefits from the typed shape — and the annotation is backed by real checks. Annotating `json.loads(...)` as `Config` *without* validating merely relocates the unproven assertion from the call site to the signature; `json.loads` returns dynamically-typed data, so the checker accepts the lie silently. With a validation library, one adapter/model call at this boundary replaces the hand-rolled checks.
+
+**When `cast()` is the right tool:** when runtime logic narrows beyond what the checker can prove — e.g., after a literal tag check, a custom predicate, or a known invariant enforced elsewhere.
+
+```python
+from typing import cast
+
+def handle_success(result: ApiResponse) -> str:
+    # An earlier check already verified result.status == "success"
+    # but the checker can't propagate that narrowing here
+    assert result.status == "success"
+    return cast(SuccessResponse, result).data  # ok; narrowing is real
+```
+
+Even then, `isinstance` or a `TypeGuard` function is usually cleaner. Reserve `cast` for cases where those don't fit.
+
+A second legitimate case: third-party stubs that are verifiably wrong. Perform the real runtime operation first, then `cast` the result to the documented type at that one boundary — with a comment naming the stub defect — instead of spreading ignores through every consumer.
+
+**Rule of thumb:** before reaching for `cast`, ask whether the source type should be narrower. 8 times out of 10, yes.
