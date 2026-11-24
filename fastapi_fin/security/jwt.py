@@ -3,8 +3,7 @@
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
-from types import MappingProxyType
-from typing import Any
+from types import MappingProxyType, ModuleType
 from uuid import uuid4
 
 from attrs import define, field
@@ -17,12 +16,13 @@ from .errors import InvalidTokenError, SecurityDependencyError
 JwtKeyResolver = Callable[[Mapping[str, object]], object]
 
 
-def _load_jwt() -> Any:
+def _load_jwt() -> ModuleType:
     try:
         return import_module("jwt")
     except ImportError as error:
         raise SecurityDependencyError(
-            "JWT support requires the security extra: run uv sync --extra security from the source checkout",
+            "JWT support requires the security extra: "
+            "run uv sync --extra security from the source checkout",
         ) from error
 
 
@@ -130,6 +130,7 @@ class JwtKeySet:
             raise DefinitionError("JWT key set must contain at least one key")
 
     def __call__(self, header: Mapping[str, object]) -> object:
+        """Resolve the key identified by the token header's ``kid``."""
         key_id = header.get("kid")
         if not isinstance(key_id, str) or not key_id.strip():
             raise InvalidTokenError("JWT key ID is required")
@@ -261,7 +262,7 @@ class JwtIssuer:
         if self.key_id is not None and not self.key_id:
             raise DefinitionError("JWT key_id must be non-empty when provided")
 
-    def issue(
+    def issue(  # noqa: PLR0913 — preserve the public keyword-only signing options.
         self,
         subject: str,
         *,
@@ -290,25 +291,16 @@ class JwtIssuer:
             "exp": issued_at + self.lifetime,
             "jti": normalized_token_id,
         }
-        reserved = set(claims) | {self.scope_claim, self.roles_claim, "kid"}
         if additional_claims is not None:
-            if not isinstance(additional_claims, Mapping):
-                raise DefinitionError("additional_claims must be a mapping")
-            if not all(isinstance(name, str) and name.strip() for name in additional_claims):
-                raise DefinitionError("additional_claims keys must be non-empty strings")
-            if reserved.intersection(additional_claims):
-                raise DefinitionError("additional_claims cannot override reserved JWT claims")
-            claims.update(additional_claims)
+            _merge_additional_claims(
+                claims, additional_claims, (self.scope_claim, self.roles_claim, "kid")
+            )
         normalized_scopes = _normalize_issue_values(scopes, "JWT scopes")
         normalized_roles = _normalize_issue_values(roles, "JWT roles")
         if normalized_scopes:
-            claims[self.scope_claim] = " ".join(
-                dict.fromkeys(scope.strip() for scope in normalized_scopes)
-            )
+            claims[self.scope_claim] = " ".join(normalized_scopes)
         if normalized_roles:
-            claims[self.roles_claim] = list(
-                dict.fromkeys(role.strip() for role in normalized_roles)
-            )
+            claims[self.roles_claim] = list(normalized_roles)
         headers = {"typ": self.token_type}
         if self.key_id is not None:
             headers["kid"] = self.key_id
@@ -318,6 +310,20 @@ class JwtIssuer:
             algorithm=self.algorithm,
             headers=headers,
         )
+
+
+def _merge_additional_claims(
+    claims: dict[str, object],
+    additional: Mapping[str, object],
+    reserved: tuple[str, ...],
+) -> None:
+    if not isinstance(additional, Mapping):
+        raise DefinitionError("additional_claims must be a mapping")
+    if not all(isinstance(name, str) and name.strip() for name in additional):
+        raise DefinitionError("additional_claims keys must be non-empty strings")
+    if any(name in claims or name in reserved for name in additional):
+        raise DefinitionError("additional_claims cannot override reserved JWT claims")
+    claims.update(additional)
 
 
 __all__ = ["JwtIssuer", "JwtKeyResolver", "JwtKeySet", "JwtVerifier"]

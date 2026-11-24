@@ -11,7 +11,9 @@ class TokenAuthenticator(Protocol):
 
     def authenticate(
         self, token: str
-    ) -> AuthenticatedPrincipal | Awaitable[AuthenticatedPrincipal]: ...
+    ) -> AuthenticatedPrincipal | Awaitable[AuthenticatedPrincipal]:
+        """Return the authenticated principal or raise an authentication error."""
+        ...
 
 
 __all__ = ["TokenAuthenticator"]

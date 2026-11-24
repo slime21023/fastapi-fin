@@ -85,7 +85,7 @@ def test_request_finalizer_receives_endpoint_exception() -> None:
     app = FastAPI(lifespan=integration.lifespan)
 
     @app.get("/fail")
-    async def fail(session: Inject[Session]) -> None:
+    async def fail(_session: Inject[Session]) -> None:
         raise failure
 
     with TestClient(app, raise_server_exceptions=False) as client:
@@ -111,11 +111,11 @@ def test_provider_exception_reaches_native_exception_handler() -> None:
     app = FastAPI(lifespan=integration.lifespan)
 
     @app.exception_handler(ServiceUnavailableError)
-    async def handle_unavailable(request: Request, error: ServiceUnavailableError) -> JSONResponse:
+    async def handle_unavailable(_request: Request, error: ServiceUnavailableError) -> JSONResponse:
         return JSONResponse({"detail": str(error)}, status_code=503)
 
     @app.get("/service")
-    async def service(value: Inject[Service]) -> None:
+    async def service(_value: Inject[Service]) -> None:
         raise AssertionError("endpoint should not run if dependency resolution fails")
 
     with TestClient(app) as client:
@@ -173,7 +173,7 @@ def test_startup_rejects_websocket_injection_even_for_exported_contract() -> Non
     app = FastAPI(lifespan=integration.lifespan)
 
     @app.websocket("/socket")
-    async def socket(websocket: WebSocket, service: Inject[Service]) -> None:
+    async def socket(websocket: WebSocket, _service: Inject[Service]) -> None:
         await websocket.close()
 
     async def startup() -> None:

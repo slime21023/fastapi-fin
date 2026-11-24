@@ -12,7 +12,7 @@ site/
 .uv/
 .ruff_cache/
 .pytest_cache/
-.hypothesis/
+.cache/
 .coverage
 coverage.xml
 .mypy_cache/

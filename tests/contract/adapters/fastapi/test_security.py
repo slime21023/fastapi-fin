@@ -42,7 +42,7 @@ def build_security() -> tuple[JwtIssuer, FastAPISecurity, FastAPI]:
         modules=(Module("auth", providers=(AuthProvider(),), exports=(TokenAuthenticator,)),),
     )
     security = FastAPISecurity(
-        token_url="/token",
+        token_url="/token",  # noqa: S106 — endpoint path, not a credential.
         scopes={"users:read": "Read users"},
     )
     return issuer, security, FastAPI(lifespan=FastAPIIntegration(application).lifespan)
@@ -103,7 +103,7 @@ def test_fastapi_security_require_marker_enforces_roles() -> None:
 
     @app.get("/managed")
     def managed_area(
-        principal: AuthenticatedPrincipal = admin_marker,
+        principal: Annotated[AuthenticatedPrincipal, admin_marker],
     ) -> dict[str, str]:
         return {"subject": principal.subject}
 

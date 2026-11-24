@@ -62,7 +62,8 @@ class Module:
                 raise DefinitionError("module providers must contain dishka Provider instances")
             if provider.component != DEFAULT_COMPONENT:
                 raise DefinitionError(
-                    f"module {self.name!r} provider {provider!r} must not set a component; Module assigns it"
+                    f"module {self.name!r} provider {provider!r} must not set a component; "
+                    "Module assigns it"
                 )
             if provider.context_vars:
                 raise DefinitionError(

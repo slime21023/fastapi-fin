@@ -106,7 +106,7 @@ async def list_tasks(
 
 @app.get("/admin")
 async def admin_area(
-    principal: AuthenticatedPrincipal = security.require(require_roles("admin")),
+    principal: Annotated[AuthenticatedPrincipal, security.require(require_roles("admin"))],
 ) -> dict[str, str]:
     return {"subject": principal.subject}
 ```

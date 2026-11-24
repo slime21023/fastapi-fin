@@ -1,10 +1,11 @@
 """FastAPI security boundary for framework-independent authenticators."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from inspect import isawaitable
-from typing import Any
 
 from fastapi import Depends, HTTPException, Security
+from fastapi.params import Depends as DependsMarker
+from fastapi.params import Security as SecurityMarker
 from fastapi.security import HTTPBearer, OAuth2PasswordBearer, SecurityScopes
 
 from ..errors import AdapterError
@@ -30,6 +31,7 @@ class FastAPISecurity:
         scheme_name: str | None = None,
         description: str | None = None,
     ) -> None:
+        """Configure HTTP bearer or OAuth2 password bearer authentication."""
         if token_url is not None and (not isinstance(token_url, str) or not token_url.strip()):
             raise AdapterError("security token_url must be non-empty text")
         if scopes is None:
@@ -58,12 +60,12 @@ class FastAPISecurity:
             )
         self.current_principal = self._build_current_principal()
 
-    def principal_marker(self, *, scopes: tuple[str, ...] = ()) -> Any:
+    def principal_marker(self, *, scopes: tuple[str, ...] = ()) -> SecurityMarker:
         """Return a FastAPI ``Security`` marker for endpoint parameters."""
         self._validate_scopes(scopes)
         return Security(self.current_principal, scopes=list(scopes))
 
-    def require(self, policy: PrincipalPolicy) -> Any:
+    def require(self, policy: PrincipalPolicy) -> DependsMarker:
         """Return an endpoint marker that authenticates and enforces a policy."""
         if not isinstance(policy, PrincipalPolicy):
             raise AdapterError("security policy must be a PrincipalPolicy")
@@ -86,13 +88,13 @@ class FastAPISecurity:
 
         return Depends(enforce_policy)
 
-    def _build_current_principal(self) -> Callable[..., Any]:
+    def _build_current_principal(self) -> Callable[..., Awaitable[AuthenticatedPrincipal]]:
         scheme_dependency = Depends(self.scheme)
 
         async def resolve(
             security_scopes: SecurityScopes,
             authenticator: Inject[TokenAuthenticator],
-            credentials: Any = scheme_dependency,
+            credentials: object = scheme_dependency,
         ) -> AuthenticatedPrincipal:
             token = (
                 credentials

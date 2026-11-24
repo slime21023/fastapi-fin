@@ -1,10 +1,10 @@
 """Native FastAPI dependencies backed by the active Dishka request scope."""
 
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
 from contextlib import asynccontextmanager
-from inspect import signature, unwrap
+from inspect import Parameter, signature, unwrap
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Annotated, Any, Final, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Final, get_args, get_origin
 
 from attrs import define
 from dishka import AsyncContainer, BaseScope, Scope
@@ -58,7 +58,7 @@ else:
     class Inject:
         """Declare an exported contract as a native FastAPI dependency."""
 
-        def __class_getitem__(cls, contract: Any) -> object:
+        def __class_getitem__(cls, contract: object) -> object:
             try:
                 _normalize_contract(contract)
             except DefinitionError as error:
@@ -112,6 +112,24 @@ def _validate_injections(app: FastAPI, exports: Mapping[object, str]) -> None:
                     )
 
 
+def _dependency_parameters(call: Callable[..., object]) -> Iterable[Parameter]:
+    target = unwrap(call)
+    if isinstance(target, type):
+        target = target.__init__
+    elif not hasattr(target, "__globals__"):
+        target = type(target).__call__
+    try:
+        return signature(
+            call, eval_str=True, globals=getattr(target, "__globals__", None)
+        ).parameters.values()
+    except (NameError, TypeError, ValueError, SyntaxError):
+        # FastAPI may accept annotations that inspect cannot resolve.
+        try:
+            return signature(call).parameters.values()
+        except (TypeError, ValueError):
+            return ()
+
+
 def _collect_contracts(call: Callable[..., object], seen: set[int]) -> Iterator[object]:
     if isinstance(call, _InjectDependency):
         yield call.contract
@@ -119,22 +137,7 @@ def _collect_contracts(call: Callable[..., object], seen: set[int]) -> Iterator[
     if id(call) in seen:
         return
     seen.add(id(call))
-    target = unwrap(call)
-    if isinstance(target, type):
-        target = target.__init__
-    elif not hasattr(target, "__globals__"):
-        target = type(target).__call__
-    try:
-        parameters = signature(
-            call, eval_str=True, globals=getattr(target, "__globals__", None)
-        ).parameters
-    except (NameError, TypeError, ValueError, SyntaxError):
-        # FastAPI may accept annotations that inspect cannot resolve.
-        try:
-            parameters = signature(call).parameters
-        except (TypeError, ValueError):
-            return
-    for parameter in parameters.values():
+    for parameter in _dependency_parameters(call):
         annotation = parameter.annotation
         markers = []
         if get_origin(annotation) is Annotated:

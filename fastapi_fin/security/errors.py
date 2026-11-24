@@ -33,6 +33,7 @@ class InsufficientScopeError(AuthorizationError):
     """Raised when a principal lacks one or more required OAuth scopes."""
 
     def __init__(self, required_scopes: Iterable[str]) -> None:
+        """Record the scopes required by the rejected operation."""
         self.required_scopes = tuple(required_scopes)
         super().__init__("insufficient scope")
 

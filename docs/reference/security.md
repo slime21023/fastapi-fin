@@ -243,7 +243,7 @@ def principal_marker(
     self,
     *,
     scopes: tuple[str, ...] = (),
-) -> Any: ...
+) -> SecurityMarker: ...
 ```
 
 回傳可放在 `Annotated` metadata 的 FastAPI `Security` marker：
@@ -264,7 +264,7 @@ def list_tasks(
 ### `require()`
 
 ```python
-def require(self, policy: PrincipalPolicy) -> Any: ...
+def require(self, policy: PrincipalPolicy) -> DependsMarker: ...
 ```
 
 回傳 FastAPI `Depends` marker。它透過 `Security` 以 policy 的 scopes 取得 principal，再執行 `policy.enforce()` 並回傳同一個 principal。傳入非 `PrincipalPolicy` 值或不符合設定的 scopes，會拋出 `AdapterError`：
@@ -275,7 +275,7 @@ admin = require_roles("admin")
 
 @router.get("/admin")
 def admin_area(
-    principal: AuthenticatedPrincipal = security.require(admin),
+    principal: Annotated[AuthenticatedPrincipal, security.require(admin)],
 ) -> dict[str, str]:
     return {"subject": principal.subject}
 ```

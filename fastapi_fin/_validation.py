@@ -1,11 +1,10 @@
 """Internal validation helpers shared by immutable definition models."""
 
 from collections.abc import Callable, Iterable
-from typing import Any
 
 from .errors import DefinitionError
 
-AttrsValidator = Callable[[object, Any, object], None]
+AttrsValidator = Callable[[object, object, object], None]
 
 
 def normalize_iterable[ValueT](value: Iterable[ValueT], label: str) -> tuple[ValueT, ...]:
@@ -19,7 +18,7 @@ def normalize_iterable[ValueT](value: Iterable[ValueT], label: str) -> tuple[Val
 def bool_validator(label: str) -> AttrsValidator:
     """Build an attrs validator for strict bool values."""
 
-    def validate(_instance: object, _attribute: Any, value: object) -> None:
+    def validate(_instance: object, _attribute: object, value: object) -> None:
         if not isinstance(value, bool):
             raise DefinitionError(f"{label} must be bool")
 

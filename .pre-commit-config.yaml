@@ -24,7 +24,7 @@ repos:
 
       - id: pytest-fast
         name: pytest (fast tests only)
-        entry: uv run pytest -m "not slow and not integration" -q
+        entry: uv run pytest -m "not integration" -q
         language: system
         pass_filenames: false
         stages: [pre-push]

@@ -42,16 +42,7 @@ def build_container(
     if not isinstance(context, Mapping):
         raise DefinitionError("context must be a mapping of contracts to dishka scopes")
     exports = application.exports
-    host = Provider()
-    for contract, scope in context.items():
-        _normalize_contract(contract)
-        if not isinstance(scope, BaseScope):
-            raise DefinitionError("context scopes must be dishka scopes")
-        if contract in exports:
-            raise AssemblyError(
-                f"context type {contract!r} is also exported by module {exports[contract]!r}"
-            )
-        host.from_context(provides=contract, scope=scope)
+    host = _context_provider(context, exports)
 
     export_bridge = Provider()
     for contract, owner in exports.items():
@@ -95,6 +86,22 @@ def build_container(
         )
     except (InvalidGraphError, AliasedFactoryNotFoundError) as error:
         raise AssemblyError(f"dependency graph is invalid: {error}") from error
+
+
+def _context_provider(
+    context: Mapping[object, BaseScope], exports: Mapping[object, str]
+) -> Provider:
+    provider = Provider()
+    for contract, scope in context.items():
+        _normalize_contract(contract)
+        if not isinstance(scope, BaseScope):
+            raise DefinitionError("context scopes must be dishka scopes")
+        if contract in exports:
+            raise AssemblyError(
+                f"context type {contract!r} is also exported by module {exports[contract]!r}"
+            )
+        provider.from_context(provides=contract, scope=scope)
+    return provider
 
 
 @asynccontextmanager
