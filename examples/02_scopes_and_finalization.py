@@ -6,7 +6,7 @@ from dishka import Provider, Scope, provide
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fastapi_fin import FastAPIIntegration, FinProxy, Inject, Module
+from fastapi_fin import FastAPIIntegration, FinComposition, Inject, Module
 
 
 class Pool:
@@ -53,7 +53,7 @@ class StorageProvider(Provider):
 def main() -> None:
     pool = Pool()
     storage = Module("storage", providers=(StorageProvider(pool),), exports=(Session,))
-    app = FastAPI(lifespan=FastAPIIntegration(FinProxy(modules=(storage,))).lifespan)
+    app = FastAPI(lifespan=FastAPIIntegration(FinComposition(modules=(storage,))).lifespan)
 
     @app.post("/items/{name}")
     async def save_item(name: str, session: Inject[Session], fail: bool = False) -> None:

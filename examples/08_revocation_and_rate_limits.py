@@ -12,7 +12,7 @@ from fastapi_fin import (
     AuthenticatedPrincipal,
     FastAPIIntegration,
     FastAPISecurity,
-    FinProxy,
+    FinComposition,
     Inject,
     InvalidTokenError,
     JwtIssuer,
@@ -100,8 +100,8 @@ async def enforce_rate_limit(request: Request, budget: Inject[RequestBudget]) ->
         )
 
 
-def create_app(fin: FinProxy) -> FastAPI:
-    app = FastAPI(lifespan=FastAPIIntegration(fin).lifespan)
+def create_app(composition: FinComposition) -> FastAPI:
+    app = FastAPI(lifespan=FastAPIIntegration(composition).lifespan)
 
     @app.get("/me", dependencies=[Depends(enforce_rate_limit)])
     async def read_me(
@@ -129,7 +129,7 @@ def main() -> None:
     key = token_urlsafe(32)
     issuer = JwtIssuer(key=key, algorithm="HS256", issuer=ISSUER_URL, audience="api")
     verifier = JwtVerifier(key=key, algorithms=("HS256",), issuer=ISSUER_URL, audience="api")
-    fin = FinProxy(
+    composition = FinComposition(
         modules=(
             Module(
                 "state",
@@ -145,7 +145,7 @@ def main() -> None:
         )
     )
 
-    with TestClient(create_app(fin)) as client:
+    with TestClient(create_app(composition)) as client:
         first = bearer(issuer.issue("user-1"))
         assert client.get("/me", headers=first).json() == {"subject": "user-1"}
         assert client.post("/logout", headers=first).json() == {"status": "logged out"}
@@ -163,7 +163,7 @@ def main() -> None:
     preloaded = InMemoryRevokedTokens()
     preloaded.revoke(leaked_id)
     leaked = bearer(issuer.issue("user-1", token_id=leaked_id))
-    with TestClient(create_app(fin.with_overrides({RevokedTokens: preloaded}))) as client:
+    with TestClient(create_app(composition.with_overrides({RevokedTokens: preloaded}))) as client:
         assert client.get("/me", headers=leaked).status_code == 401
 
     print("08_revocation_and_rate_limits: OK")

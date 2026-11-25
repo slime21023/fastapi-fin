@@ -1,11 +1,11 @@
 # Testing and overrides
 
-`FinProxy.with_overrides({Contract: fake})` replaces an object behind a public contract without changing routes,
-providers or the existing `FinProxy`. The key must be an exported contract, and the value is a prepared instance, not a factory.
+`FinComposition.with_overrides({Contract: fake})` replaces an object behind a public contract without changing routes,
+providers or the existing `FinComposition`. The key must be an exported contract, and the value is a prepared instance, not a factory.
 The fake is provided in `Scope.APP`: HTTP injection, requires from other modules, and dependencies on that contract inside the exporting module
 all receive the same object. If the same contract is overridden more than once, the last override wins.
 
-Each test can create its own fake and `FinProxy`, which avoids sharing mutable state across tests. Even when a new container is created,
+Each test can create its own fake and `FinComposition`, which avoids sharing mutable state across tests. Even when a new container is created,
 the container uses the object you passed in and does not copy it.
 
 ## Without starting FastAPI
@@ -17,7 +17,7 @@ in a separate Python module that both the HTTP entry point and the tests import.
 ```python
 import asyncio
 
-from app import InMemoryDirectory, UserDirectory, fin
+from app import InMemoryDirectory, UserDirectory, composition
 
 from fastapi_fin import open_container
 
@@ -26,7 +26,7 @@ def test_directory_override() -> None:
     fake = InMemoryDirectory({42: "Test user"})
 
     async def check() -> None:
-        async with open_container(fin.with_overrides({UserDirectory: fake})) as root:
+        async with open_container(composition.with_overrides({UserDirectory: fake})) as root:
             assert await root.get(UserDirectory) is fake
 
     asyncio.run(check())
@@ -42,12 +42,12 @@ so requests receive the ASGI state the container needs and resources are cleaned
 ```python
 from fastapi.testclient import TestClient
 
-from app import InMemoryDirectory, UserDirectory, create_app, fin
+from app import InMemoryDirectory, UserDirectory, composition, create_app
 
 
 def test_get_user() -> None:
     fake = InMemoryDirectory({42: "Test user"})
-    app = create_app(fin.with_overrides({UserDirectory: fake}))
+    app = create_app(composition.with_overrides({UserDirectory: fake}))
 
     with TestClient(app) as client:
         response = client.get("/users/42")

@@ -29,13 +29,13 @@ profiles = Module(
     exports=(ProfileService,),
     requires=(UserDirectory,),
 )
-fin_with_profiles = FinProxy(modules=(*fin.modules, profiles))
+composition_with_profiles = FinComposition(modules=(*composition.modules, profiles))
 ```
 
 Services that are not exported are available to providers in the same module, but they do not appear in other modules or the default component through ordinary type resolution. This is the boundary of ordinary DI lookup, not a security sandbox: if the caller explicitly specifies a Dishka component, FastAPI-Fin does not block that direct access. `Inject[T]` in the HTTP layer uses the default component and should inject only exported service contracts.
 
 ## Declaration and assembly errors
 
-Invalid module declarations raise `DefinitionError`; duplicate module names or exported contracts raise `AssemblyError` when the `FinProxy` is created. Only when the container is built does it check whether each `requires` entry is exported by another module or provided by the host's context, and validate the Dishka dependency graph. As a result, errors such as a missing provider, a cross-module dependency that is not required, and circular dependencies can be found before any request is handled.
+Invalid module declarations raise `DefinitionError`; duplicate module names or exported contracts raise `AssemblyError` when the `FinComposition` is created. Only when the container is built does it check whether each `requires` entry is exported by another module or provided by the host's context, and validate the Dishka dependency graph. As a result, errors such as a missing provider, a cross-module dependency that is not required, and circular dependencies can be found before any request is handled.
 
 A value that must be supplied by the host should be declared by the module in `requires` and provided through a [container scope](scopes.md); do not use `from_context` in the module's providers.

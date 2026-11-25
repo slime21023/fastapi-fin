@@ -1,6 +1,6 @@
 # FastAPI integration
 
-Use native `FastAPI`, `APIRouter`, and `Depends`, and pass `FastAPIIntegration(fin).lifespan` to `FastAPI(lifespan=...)`. On a parameter of an HTTP endpoint or nested dependency, write `service: Inject[Service]`, where `Service` must be an exported contract. `Inject[T]` is an `Annotated` carrying `Depends`; it does not turn the service into an OpenAPI parameter or request body. The integration adds no middleware, does not replace route classes, and does not wrap endpoints.
+Use native `FastAPI`, `APIRouter`, and `Depends`, and pass `FastAPIIntegration(composition).lifespan` to `FastAPI(lifespan=...)`. On a parameter of an HTTP endpoint or nested dependency, write `service: Inject[Service]`, where `Service` must be an exported contract. `Inject[T]` is an `Annotated` carrying `Depends`; it does not turn the service into an OpenAPI parameter or request body. The integration adds no middleware, does not replace route classes, and does not wrap endpoints.
 
 ## Compose your own lifespan
 
@@ -12,10 +12,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 
-from app import UserDirectory, fin
+from app import UserDirectory, composition
 from fastapi_fin import FastAPIIntegration, Inject
 
-integration = FastAPIIntegration(fin)
+integration = FastAPIIntegration(composition)
 
 
 @asynccontextmanager

@@ -16,7 +16,7 @@ from fastapi.routing import APIRoute, APIWebSocketRoute
 from .._validation import Contract, ModuleName, normalize_contract
 from ..container import open_container
 from ..errors import AdapterError, AssemblyError, DefinitionError
-from ..modules import FinProxy
+from ..modules import FinComposition
 
 CONTAINER_STATE_KEY: Final = "fastapi_fin_container"
 _REQUEST_STATE_KEY: Final = "_fastapi_fin_request_container"
@@ -75,21 +75,21 @@ else:
 
 @frozen
 class FastAPIIntegration:
-    """Own the container built from a FinProxy through an explicit FastAPI lifespan."""
+    """Own the container built from a FinComposition through an explicit FastAPI lifespan."""
 
-    fin: FinProxy
+    composition: FinComposition
 
     def __attrs_post_init__(self) -> None:
-        if not isinstance(self.fin, FinProxy):
-            raise AdapterError("FastAPIIntegration requires a FinProxy")
+        if not isinstance(self.composition, FinComposition):
+            raise AdapterError("FastAPIIntegration requires a FinComposition")
 
     @asynccontextmanager
     async def lifespan(self, app: FastAPI) -> AsyncIterator[dict[str, object]]:
         """Build a fresh container and expose it through ASGI lifespan state."""
         if not isinstance(app, FastAPI):
             raise AdapterError("lifespan requires a FastAPI application")
-        async with open_container(self.fin, context=_FASTAPI_CONTEXT) as container:
-            _validate_injections(app, self.fin.exports)
+        async with open_container(self.composition, context=_FASTAPI_CONTEXT) as container:
+            _validate_injections(app, self.composition.exports)
             yield {CONTAINER_STATE_KEY: container}
 
 

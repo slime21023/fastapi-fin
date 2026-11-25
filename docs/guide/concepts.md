@@ -8,7 +8,7 @@ OpenAPI contract describing HTTP requests and responses.
 
 ```text
 Module (providers, exports, requires)
-    → FinProxy (combines modules and fakes)
+    → FinComposition (combines modules and fakes)
     → build_container() (assembles and validates the Dishka dependency graph)
         ├─ FastAPIIntegration.lifespan → HTTP requests use Inject[T]
         └─ open_container() → workers, scripts, or tests use await container.get(T)
@@ -18,13 +18,13 @@ Module (providers, exports, requires)
 | --- | --- |
 | Contract | A `Protocol`, abstract base class, or other type hint Dishka can identify, used as the service key. |
 | `Module` | Declares a set of Dishka providers and describes cross-module interfaces with `exports` and `requires`. |
-| `FinProxy` | Combines modules, checks for module name and export conflicts, and records fakes for tests. |
+| `FinComposition` | Combines modules, checks for module name and export conflicts, and records fakes for tests. |
 | `AsyncContainer` | Dishka resolves dependencies, caches instances per scope, and cleans up resources. |
 | `FastAPIIntegration` | Opens and closes the container in the lifespan, and lets `Inject` reach the child container of the current HTTP request through ASGI lifespan state. |
 
 ## Declarations and resource lifecycle
 
-`Module` and `FinProxy` are frozen declarations; `with_overrides()` returns a new `FinProxy`
+`Module` and `FinComposition` are frozen declarations; `with_overrides()` returns a new `FinComposition`
 and does not modify the original declaration. Dishka `Provider` instances themselves are not deeply frozen, so finish registering them before assembly.
 Only the assembled container holds the instances and cleanup state of each scope.
 

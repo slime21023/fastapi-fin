@@ -4,7 +4,7 @@ from dishka import Provider, Scope
 import pytest
 
 from fastapi_fin.errors import AssemblyError, DefinitionError
-from fastapi_fin.modules import FinProxy, Module
+from fastapi_fin.modules import FinComposition, Module
 
 
 def context_provider() -> Provider:
@@ -49,13 +49,13 @@ def test_rejects_invalid_fin_proxy(
     options: dict[str, Any], error: type[Exception], message: str
 ) -> None:
     with pytest.raises(error, match=message):
-        FinProxy(**options)
+        FinComposition(**options)
 
 
 def test_overrides_are_immutable_snapshots() -> None:
     source: dict[object, object] = {int: 1}
-    fin = FinProxy((Module("numbers", exports=(int,)),), source)
+    composition = FinComposition((Module("numbers", exports=(int,)),), source)
     source[int] = 2
-    replaced = fin.with_overrides({int: 3})
-    assert fin.overrides[int] == 1
+    replaced = composition.with_overrides({int: 3})
+    assert composition.overrides[int] == 1
     assert replaced.overrides[int] == 3

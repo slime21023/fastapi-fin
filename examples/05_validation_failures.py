@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from fastapi_fin import (
     AssemblyError,
     FastAPIIntegration,
-    FinProxy,
+    FinComposition,
     Inject,
     Module,
     build_container,
@@ -48,19 +48,19 @@ def expect_assembly_error(*messages: str) -> Iterator[None]:
 
 def main() -> None:
     with expect_assembly_error("is exported by modules"):
-        FinProxy(
+        FinComposition(
             modules=(Module("users", exports=(UserTable,)), Module("admin", exports=(UserTable,)))
         )
 
     with expect_assembly_error("neither exported by a module nor provided as context"):
-        build_container(FinProxy(modules=(Module("orders", requires=(UserTable,)),)))
+        build_container(FinComposition(modules=(Module("orders", requires=(UserTable,)),)))
 
     users = Module("users", providers=(UsersProvider(),))  # UserTable stays private.
     orders = Module("orders", providers=(OrdersProvider(),), exports=(OrderService,))
     with expect_assembly_error("dependency graph is invalid:", "UserTable"):
-        build_container(FinProxy(modules=(users, orders)))
+        build_container(FinComposition(modules=(users, orders)))
 
-    app = FastAPI(lifespan=FastAPIIntegration(FinProxy(modules=(users,))).lifespan)
+    app = FastAPI(lifespan=FastAPIIntegration(FinComposition(modules=(users,))).lifespan)
 
     @app.get("/users/count")
     async def count_users(table: Inject[UserTable]) -> dict[str, int]:

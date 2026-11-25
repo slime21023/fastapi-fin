@@ -20,32 +20,32 @@ Module(
 
 Collection inputs are normalized to tuples; a declaration cannot be reassigned, but it is not a deep copy of the provider instances. Invalid fields raise `DefinitionError`.
 
-## `FinProxy`
+## `FinComposition`
 
 ```python
-FinProxy(modules: tuple[Module, ...] = (), overrides: Mapping[object, object] = {})
+FinComposition(modules: tuple[Module, ...] = (), overrides: Mapping[object, object] = {})
 ```
 
 `modules` is normalized to a tuple and accepts only `Module` instances. `exports` is a read-only `Mapping[object, str]` that maps each contract to the name of the module that exports it. `overrides` is a read-only shallow snapshot that maps each contract to its replacement instance.
 
-Duplicate module names, a contract exported by more than one module, or an override of a contract that is not exported raise `AssemblyError` when the `FinProxy` is created. Whether `requires` is satisfied is checked only when the container is built, because context declarations are known only then.
+Duplicate module names, a contract exported by more than one module, or an override of a contract that is not exported raise `AssemblyError` when the `FinComposition` is created. Whether `requires` is satisfied is checked only when the container is built, because context declarations are known only then.
 
 ### `with_overrides(overrides)`
 
-Takes a `Mapping[object, object]` and returns a new `FinProxy`; the original is unchanged, and for the same key the new value wins. Replacement instances are available in the APP scope and take effect for the default component, the exporting module itself, and modules that import the contract through `requires`. The container uses the instance supplied by the caller and is not responsible for its cleanup; it does not call the original contract's factory to produce a fake.
+Takes a `Mapping[object, object]` and returns a new `FinComposition`; the original is unchanged, and for the same key the new value wins. Replacement instances are available in the APP scope and take effect for the default component, the exporting module itself, and modules that import the contract through `requires`. The container uses the instance supplied by the caller and is not responsible for its cleanup; it does not call the original contract's factory to produce a fake.
 
 ## `build_container()` and `open_container()`
 
 ```python
-build_container(fin, *, context={}) -> AsyncContainer
-open_container(fin, *, context={})  # async context manager, yields AsyncContainer
+build_container(composition, *, context={}) -> AsyncContainer
+open_container(composition, *, context={})  # async context manager, yields AsyncContainer
 ```
 
-`fin` must be a `FinProxy`. `context` is a `Mapping[object, BaseScope]` that maps a contract key to a Dishka `BaseScope`; it declares the type and scope of a value, not the value itself. For example, `context={Job: Scope.REQUEST}`, and then pass the value with `async with root(context={Job: job}, scope=Scope.REQUEST) as request:`. These two functions do not accept context values in the APP scope.
+`composition` must be a `FinComposition`. `context` is a `Mapping[object, BaseScope]` that maps a contract key to a Dishka `BaseScope`; it declares the type and scope of a value, not the value itself. For example, `context={Job: Scope.REQUEST}`, and then pass the value with `async with root(context={Job: job}, scope=Scope.REQUEST) as request:`. These two functions do not accept context values in the APP scope.
 
 The default component can resolve exported contracts and declared context; each module resolves in its own component by default, and obtains the imported aliases created at assembly time through `requires`. The container does not create cross-component aliases for ordinary unexported dependencies; this is not access control and does not prevent code from reaching an object by explicitly naming a component through Dishka.
 
-An invalid context declaration raises `DefinitionError`. An unsatisfied `requires`, a conflict between context and an exported key, or an input that is not a `FinProxy` raises `AssemblyError`. The build uses Dishka's strict validation; `InvalidGraphError` and `AliasedFactoryNotFoundError` are wrapped as `AssemblyError`, and other Dishka exceptions are not converted.
+An invalid context declaration raises `DefinitionError`. An unsatisfied `requires`, a conflict between context and an exported key, or an input that is not a `FinComposition` raises `AssemblyError`. The build uses Dishka's strict validation; `InvalidGraphError` and `AliasedFactoryNotFoundError` are wrapped as `AssemblyError`, and other Dishka exceptions are not converted.
 
 After `build_container()`, the caller is responsible for `await container.close()` on the root container; `async with open_container(...)` closes it automatically on exit. Child scopes are managed by the code that enters them. The container is asynchronous; synchronous factories still work but run directly on the event loop.
 

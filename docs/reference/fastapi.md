@@ -2,14 +2,14 @@
 
 `FastAPIIntegration`, `Inject`, `CONTAINER_STATE_KEY`, and `FastAPISecurity` can be imported from `fastapi_fin` or `fastapi_fin.adapters`. For the authentication and authorization APIs, see also the [security reference](security.md).
 
-## `FastAPIIntegration(fin)`
+## `FastAPIIntegration(composition)`
 
-`fin` must be a `FinProxy`; otherwise `AdapterError` is raised. The integration object cannot be reassigned; the actual container is created when the lifespan starts.
+`composition` must be a `FinComposition`; otherwise `AdapterError` is raised. The integration object cannot be reassigned; the actual container is created when the lifespan starts.
 
 ### `lifespan(app)`
 
 ```python
-integration = FastAPIIntegration(fin)
+integration = FastAPIIntegration(composition)
 app = FastAPI(lifespan=integration.lifespan)
 ```
 

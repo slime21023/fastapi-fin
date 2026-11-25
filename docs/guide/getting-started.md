@@ -23,7 +23,7 @@ from dishka import Provider, Scope, provide
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from fastapi_fin import FastAPIIntegration, FinProxy, Inject, Module
+from fastapi_fin import FastAPIIntegration, FinComposition, Inject, Module
 
 
 class UserDirectory(Protocol):
@@ -44,7 +44,7 @@ class UsersProvider(Provider):
         return InMemoryDirectory({42: "Alice"})
 
 
-fin = FinProxy(
+composition = FinComposition(
     modules=(
         Module(
             name="users",
@@ -55,8 +55,8 @@ fin = FinProxy(
 )
 
 
-def create_app(fin: FinProxy) -> FastAPI:
-    integration = FastAPIIntegration(fin)
+def create_app(composition: FinComposition) -> FastAPI:
+    integration = FastAPIIntegration(composition)
     app = FastAPI(lifespan=integration.lifespan)
 
     @app.get("/users/{user_id}")
@@ -69,7 +69,7 @@ def create_app(fin: FinProxy) -> FastAPI:
     return app
 
 
-app = create_app(fin)
+app = create_app(composition)
 
 if __name__ == "__main__":
     with TestClient(app) as client:

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from .container import build_container, open_container
 from .errors import AdapterError, AssemblyError, DefinitionError, FastAPIFinError
-from .modules import FinProxy, Module
+from .modules import FinComposition, Module
 from .security import (
     AuthenticatedPrincipal,
     AuthenticationError,
@@ -52,7 +52,7 @@ __all__ = [
     "FastAPIFinError",
     "FastAPIIntegration",
     "FastAPISecurity",
-    "FinProxy",
+    "FinComposition",
     "Inject",
     "InsufficientScopeError",
     "InvalidTokenError",

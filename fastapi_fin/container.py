@@ -26,31 +26,31 @@ from dishka.provider import BaseProvider
 
 from ._validation import Contract, ModuleName, normalize_contract
 from .errors import AssemblyError, DefinitionError
-from .modules import FinProxy, Module
+from .modules import FinComposition, Module
 
 _EMPTY_CONTEXT: Mapping[Contract, BaseScope] = MappingProxyType({})
 
 
 def build_container(
-    fin: FinProxy, *, context: Mapping[Contract, BaseScope] = _EMPTY_CONTEXT
+    composition: FinComposition, *, context: Mapping[Contract, BaseScope] = _EMPTY_CONTEXT
 ) -> AsyncContainer:
     """Validate and build a container; the caller owns its shutdown.
 
     The default component exposes exports and context. Supply declared context values
     when entering their scopes. Overrides are externally owned APP-scoped instances.
     """
-    if not isinstance(fin, FinProxy):
-        raise AssemblyError("build_container requires a FinProxy")
+    if not isinstance(composition, FinComposition):
+        raise AssemblyError("build_container requires a FinComposition")
     if not isinstance(context, Mapping):
         raise DefinitionError("context must be a mapping of contracts to dishka scopes")
 
-    context_provider = _context_provider(context, fin.exports)
+    context_provider = _context_provider(context, composition.exports)
     providers = [
-        *_module_providers(fin),
-        _export_bridge(fin.exports),
-        *_import_bridges(fin, context),
+        *_module_providers(composition),
+        _export_bridge(composition.exports),
+        *_import_bridges(composition, context),
         context_provider,
-        *_override_providers(fin),
+        *_override_providers(composition),
     ]
     try:
         return make_async_container(*providers, validation_settings=STRICT_VALIDATION)
@@ -60,18 +60,18 @@ def build_container(
 
 @asynccontextmanager
 async def open_container(
-    fin: FinProxy, *, context: Mapping[Contract, BaseScope] = _EMPTY_CONTEXT
+    composition: FinComposition, *, context: Mapping[Contract, BaseScope] = _EMPTY_CONTEXT
 ) -> AsyncIterator[AsyncContainer]:
     """Build a container and close it when the caller exits."""
-    container = build_container(fin, context=context)
+    container = build_container(composition, context=context)
     try:
         yield container
     finally:
         await container.close()
 
 
-def _module_providers(fin: FinProxy) -> list[BaseProvider]:
-    return list(chain.from_iterable(map(_component_providers, fin.modules)))
+def _module_providers(composition: FinComposition) -> list[BaseProvider]:
+    return list(chain.from_iterable(map(_component_providers, composition.modules)))
 
 
 def _component_providers(module: Module) -> list[BaseProvider]:
@@ -86,10 +86,14 @@ def _export_bridge(exports: Mapping[Contract, ModuleName]) -> Provider:
     return bridge
 
 
-def _import_bridges(fin: FinProxy, context: Mapping[Contract, BaseScope]) -> list[Provider]:
+def _import_bridges(
+    composition: FinComposition, context: Mapping[Contract, BaseScope]
+) -> list[Provider]:
     """Let each module see the contracts it requires from the default component."""
     return [
-        _import_bridge(module, fin.exports, context) for module in fin.modules if module.requires
+        _import_bridge(module, composition.exports, context)
+        for module in composition.modules
+        if module.requires
     ]
 
 
@@ -123,15 +127,15 @@ def _context_provider(
     return provider
 
 
-def _override_providers(fin: FinProxy) -> list[Provider]:
+def _override_providers(composition: FinComposition) -> list[Provider]:
     """Replace overridden contracts for both external callers and their owning module."""
-    if not fin.overrides:
+    if not composition.overrides:
         return []
     replacements = Provider(scope=Scope.APP)
     owner_bridges = []
-    for contract, instance in fin.overrides.items():
+    for contract, instance in composition.overrides.items():
         replacements.provide(_constant(instance), provides=contract, override=True)
-        owner_bridge = Provider(component=fin.exports[contract])
+        owner_bridge = Provider(component=composition.exports[contract])
         owner_bridge.alias(_as_type(contract), component=DEFAULT_COMPONENT, override=True)
         owner_bridges.append(owner_bridge)
     return [replacements, *owner_bridges]

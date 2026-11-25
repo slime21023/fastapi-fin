@@ -14,7 +14,7 @@ import pytest
 
 from fastapi_fin.adapters import FastAPIIntegration, Inject
 from fastapi_fin.errors import AdapterError, AssemblyError
-from fastapi_fin.modules import FinProxy, Module
+from fastapi_fin.modules import FinComposition, Module
 
 
 def test_injection_shares_request_scope_and_retains_app_scope() -> None:
@@ -36,7 +36,7 @@ def test_injection_shares_request_scope_and_retains_app_scope() -> None:
             return RequestToken(uuid4().hex)
 
     integration = FastAPIIntegration(
-        FinProxy((Module("tokens", providers=(Tokens(),), exports=(AppToken, RequestToken)),))
+        FinComposition((Module("tokens", providers=(Tokens(),), exports=(AppToken, RequestToken)),))
     )
     app = FastAPI(lifespan=integration.lifespan)
 
@@ -79,7 +79,7 @@ def test_request_finalizer_receives_endpoint_exception() -> None:
             seen.append(error)
 
     integration = FastAPIIntegration(
-        FinProxy((Module("sessions", providers=(Sessions(),), exports=(Session,)),))
+        FinComposition((Module("sessions", providers=(Sessions(),), exports=(Session,)),))
     )
     app = FastAPI(lifespan=integration.lifespan)
 
@@ -105,7 +105,7 @@ def test_provider_exception_reaches_native_exception_handler() -> None:
             raise ServiceUnavailableError("service is offline")
 
     integration = FastAPIIntegration(
-        FinProxy((Module("services", providers=(Services(),), exports=(Service,)),))
+        FinComposition((Module("services", providers=(Services(),), exports=(Service,)),))
     )
     app = FastAPI(lifespan=integration.lifespan)
 
@@ -130,7 +130,7 @@ async def test_startup_rejects_http_injection_of_unexported_contract(location: s
     class Missing:
         pass
 
-    integration = FastAPIIntegration(FinProxy())
+    integration = FastAPIIntegration(FinComposition())
     app = FastAPI(lifespan=integration.lifespan)
 
     async def needs_missing(value: Inject[Missing]) -> None:
@@ -166,7 +166,7 @@ async def test_startup_rejects_websocket_injection_even_for_exported_contract() 
         service = provide(Service, scope=Scope.APP)
 
     integration = FastAPIIntegration(
-        FinProxy((Module("services", providers=(Services(),), exports=(Service,)),))
+        FinComposition((Module("services", providers=(Services(),), exports=(Service,)),))
     )
     app = FastAPI(lifespan=integration.lifespan)
 
@@ -207,7 +207,7 @@ def test_user_lifespan_composes_state_with_injection_and_supplies_request_contex
             return RequestHeader(request.headers["x-contract-test"])
 
     integration = FastAPIIntegration(
-        FinProxy(
+        FinComposition(
             (
                 Module(
                     "headers", providers=(Headers(),), exports=(RequestHeader,), requires=(Request,)
@@ -248,8 +248,8 @@ def test_contract_override_preserves_native_validation_and_dependency_overrides(
             return Repo()
 
     replacement = Repo("replacement")
-    fin = FinProxy((Module("repos", providers=(Repos(),), exports=(Repo,)),))
-    integration = FastAPIIntegration(fin.with_overrides({Repo: replacement}))
+    composition = FinComposition((Module("repos", providers=(Repos(),), exports=(Repo,)),))
+    integration = FastAPIIntegration(composition.with_overrides({Repo: replacement}))
     app = FastAPI(lifespan=integration.lifespan)
 
     async def label() -> str:

@@ -76,7 +76,7 @@ class Module:
 def _index_exports(modules: tuple[Module, ...]) -> dict[Contract, ModuleName]:
     """Map every exported contract to its module, rejecting duplicate names and owners."""
     if not all(isinstance(module, Module) for module in modules):
-        raise DefinitionError("FinProxy modules must contain Module values")
+        raise DefinitionError("FinComposition modules must contain Module values")
     name_counts = Counter(module.name for module in modules)
     if duplicate := next((name for name, count in name_counts.items() if count > 1), None):
         raise AssemblyError(f"duplicate module name: {duplicate!r}")
@@ -96,17 +96,19 @@ def _exports_of(module: Module) -> Iterator[tuple[Contract, ModuleName]]:
 
 
 @frozen
-class FinProxy:
-    """The immutable root that groups modules and optional test-owned contract instances."""
+class FinComposition:
+    """The immutable composition of modules and optional test-owned contract instances."""
 
-    modules: tuple[Module, ...] = field(default=(), converter=tuple_converter("FinProxy modules"))
+    modules: tuple[Module, ...] = field(
+        default=(), converter=tuple_converter("FinComposition modules")
+    )
     overrides: Mapping[Contract, object] = field(factory=dict, converter=_normalize_overrides)
     _exports: Mapping[Contract, ModuleName] = field(
         init=False,
         repr=False,
         eq=False,
         default=Factory(
-            lambda fin: MappingProxyType(_index_exports(fin.modules)),
+            lambda composition: MappingProxyType(_index_exports(composition.modules)),
             takes_self=True,
         ),
     )
@@ -121,8 +123,8 @@ class FinProxy:
         return self._exports
 
     def with_overrides(self, overrides: Mapping[Contract, object]) -> Self:
-        """Return a new FinProxy with test-owned replacements, latest value winning."""
+        """Return a new FinComposition with test-owned replacements, latest value winning."""
         return evolve(self, overrides={**self.overrides, **_normalize_overrides(overrides)})
 
 
-__all__ = ["FinProxy", "Module"]
+__all__ = ["FinComposition", "Module"]

@@ -6,7 +6,7 @@ from dishka import Provider, Scope, provide
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fastapi_fin import FastAPIIntegration, FinProxy, Inject, Module
+from fastapi_fin import FastAPIIntegration, FinComposition, Inject, Module
 
 
 class UserDirectory(Protocol):
@@ -46,7 +46,7 @@ def main() -> None:
         exports=(OrderService,),
         requires=(UserDirectory,),
     )
-    app = FastAPI(lifespan=FastAPIIntegration(FinProxy(modules=(users, orders))).lifespan)
+    app = FastAPI(lifespan=FastAPIIntegration(FinComposition(modules=(users, orders))).lifespan)
 
     @app.get("/orders/{order_id}")
     async def read_order(order_id: int, service: Inject[OrderService]) -> dict[str, int | str]:

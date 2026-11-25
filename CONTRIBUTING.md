@@ -23,12 +23,12 @@ Unless the algorithm requires it (for example, recursively walking a dependency 
 
 ## Architecture boundaries
 
-- `fastapi_fin/modules.py` validates immutable `Module` and `FinProxy` declarations. Providers are handed to a module once built and are not modified in place afterwards.
+- `fastapi_fin/modules.py` validates immutable `Module` and `FinComposition` declarations. Providers are handed to a module once built and are not modified in place afterwards.
 - `fastapi_fin/container.py` connects exports and requires to Dishka components. Dishka owns the dependency graph, scopes, caching, and cleanup; do not reimplement a runtime.
 - `fastapi_fin/security/` (JWT, principal, policy, and the authenticator contract) does not depend on FastAPI.
 - Only `fastapi_fin/adapters/` may import FastAPI. The integration uses native dependencies and the lifespan; it does not use `dishka.integrations`, custom routing, or middleware.
 - Assembly keeps the original Dishka graph error as the cause; factory exceptions are not wrapped at runtime.
-- Naming: `FastAPI*` classes live in `adapters/` and depend on FastAPI; `Fin*` classes are framework-independent; `app` always means a FastAPI instance and `fin` a `FinProxy`.
+- Naming: `FastAPI*` classes live in `adapters/` and depend on FastAPI; `Fin*` classes are framework-independent; `app` always means a FastAPI instance and `composition` a `FinComposition`.
 
 ## Tests and documentation
 

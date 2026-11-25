@@ -5,17 +5,17 @@ from secrets import token_hex
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fastapi_fin import FastAPIIntegration, FinProxy, JwtIssuer
+from fastapi_fin import FastAPIIntegration, FinComposition, JwtIssuer
 
 from .providers import JWT_AUDIENCE, JWT_ISSUER, auth_module, tasks_module
 from .routes import router as task_router
 
 
-def create_app(fin: FinProxy) -> FastAPI:
+def create_app(composition: FinComposition) -> FastAPI:
     app = FastAPI(
         title="FastAPI-Fin complete Task API",
         version="0.9.1",
-        lifespan=FastAPIIntegration(fin).lifespan,
+        lifespan=FastAPIIntegration(composition).lifespan,
     )
     app.include_router(task_router)
     return app
@@ -33,12 +33,12 @@ def run_demo() -> None:
         issuer=JWT_ISSUER,
         audience=JWT_AUDIENCE,
     )
-    fin = FinProxy(modules=(tasks_module, auth_module(signing_key)))
+    composition = FinComposition(modules=(tasks_module, auth_module(signing_key)))
     user_token = issuer.issue("reader")
     admin_token = issuer.issue("admin", roles=("admin",))
     payload = {"title": "Learn FastAPI-Fin"}
 
-    with TestClient(create_app(fin)) as client:
+    with TestClient(create_app(composition)) as client:
         empty = client.get("/tasks")
         missing = client.post("/tasks", json=payload)
         invalid = client.post("/tasks", json=payload, headers=_bearer("not-a-jwt"))
