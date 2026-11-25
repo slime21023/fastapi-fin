@@ -121,6 +121,14 @@ async def admin_area(
 
 Another provider can supply a synchronous or asynchronous `TokenAuthenticator` instead. An expected credential rejection should raise `AuthenticationError` (e.g. `InvalidTokenError`) rather than swallowing service errors. If `TokenAuthenticator` is not exported, the lifespan raises `AssemblyError` as long as startup validation finds the authentication dependency on a route.
 
+## Per-resource access rules
+
+Name scopes per resource as `<resource>:<action>` (for example `docs:read` and `docs:write`) and declare them in `FastAPISecurity(scopes=...)`; a route that uses an undeclared scope raises `AdapterError` when it is defined. `security.require(policy)` returns a marker that works as an endpoint parameter and in `APIRouter(dependencies=[...])`. A router-level policy and a route-level policy both apply, so a router can require `docs:read` while one route also requires `docs:write`. Scopes are compared as exact strings; wildcards such as `docs:*` are not expanded.
+
+Rules that depend on data, such as "only the owner may edit this document", cannot be decided from the token. Put them in an exported service contract that receives the `AuthenticatedPrincipal`, and replace that service in tests with `Application.with_overrides()`. See [`07_resource_authorization.py`](https://github.com/slime21023/fastapi-fin/blob/main/examples/07_resource_authorization.py).
+
+Every `FastAPISecurity` instance resolves the same exported `TokenAuthenticator` contract, so one application trusts one authenticator. To accept tokens from several issuers, export a single authenticator that dispatches to the matching `JwtVerifier`.
+
 ## Token lifecycle boundaries
 
 The JWT issuer and verifier currently do not handle:
@@ -134,5 +142,7 @@ These should be implemented by an application provider or an external identity s
 access tokens are recommended; if you need immediate revocation, add a revocation store or use
 opaque refresh/session tokens instead of
 assuming a JWT can log itself out.
+
+[`08_revocation_and_rate_limits.py`](https://github.com/slime21023/fastapi-fin/blob/main/examples/08_revocation_and_rate_limits.py) wraps `JwtVerifier` in an authenticator that rejects revoked JWT IDs with `InvalidTokenError`, which becomes a `401`, after the signature is verified. Errors raised by the store itself are not authentication errors, so they propagate as a `500` instead of letting the request through. Keep each revoked ID until the token's `exp`. The same example rate-limits a route with a dependency that returns `429` with `Retry-After`. In-memory stores exist once per worker, so use a shared store such as Redis with `--workers N`. Per-IP limits on login attempts belong in a reverse proxy or middleware, because a `TokenAuthenticator` receives only the token.
 
 For a runnable example, see [`06_security_jwt.py`](https://github.com/slime21023/fastapi-fin/blob/main/examples/06_security_jwt.py); for the full signing, authentication and authorization API, see the [security reference](../reference/security.md).

@@ -16,6 +16,8 @@ EXAMPLE_SCRIPTS = tuple(
         "04_without_fastapi.py",
         "05_validation_failures.py",
         "06_security_jwt.py",
+        "07_resource_authorization.py",
+        "08_revocation_and_rate_limits.py",
     )
 )
 

@@ -14,7 +14,6 @@ from ..security import (
     AuthenticatedPrincipal,
     AuthenticationError,
     AuthorizationError,
-    InsufficientScopeError,
     PrincipalPolicy,
     TokenAuthenticator,
 )
@@ -54,10 +53,9 @@ class FastAPISecurity:
         async def enforce_policy(
             principal: AuthenticatedPrincipal = principal_dependency,
         ) -> AuthenticatedPrincipal:
+            # The Security dependency above has already enforced the policy's scopes.
             try:
                 policy.enforce(principal)
-            except InsufficientScopeError as error:
-                raise _insufficient_scope_error(error.required_scopes) from error
             except AuthorizationError as error:
                 raise _authorization_error() from error
             return principal

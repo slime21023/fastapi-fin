@@ -9,7 +9,9 @@ uv run python examples/03_testing_overrides.py
 uv run python examples/04_without_fastapi.py
 uv run python examples/05_validation_failures.py
 uv run python examples/06_security_jwt.py
+uv run python examples/07_resource_authorization.py
+uv run python examples/08_revocation_and_rate_limits.py
 uv run python -m examples.complete_app
 ```
 
-The first six show cross-module contracts, resource cleanup, test overrides, resolving without HTTP, assembly failures, and JWT. The [complete Task API](complete_app/README.md) keeps services, authentication, and HTTP routes in separate modules.
+The numbered scripts show cross-module contracts, resource cleanup, test overrides, resolving without HTTP, assembly failures, JWT, per-resource authorization, and token revocation with rate limiting. The [complete Task API](complete_app/README.md) keeps services, authentication, and HTTP routes in separate modules.

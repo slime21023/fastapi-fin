@@ -10,4 +10,6 @@ The examples live in the source code repository. After obtaining the source code
 | `uv run python examples/04_without_fastapi.py` | A worker obtains services without HTTP. |
 | `uv run python examples/05_validation_failures.py` | Contract conflicts, missing contracts, and unexported dependencies. |
 | `uv run python examples/06_security_jwt.py` | Injecting an authenticator and using FastAPI bearer security. |
+| `uv run python examples/07_resource_authorization.py` | Scopes per router, role-gated routes, and an overridable owner check. |
+| `uv run python examples/08_revocation_and_rate_limits.py` | Revoking tokens by JWT ID and returning `429` from a rate-limit dependency. |
 | `uv run python -m examples.complete_app` | A Task API that separates services, authentication, and HTTP. |
