@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 from dishka import Provider, Scope, provide
 
-from fastapi_fin import Application, Module, open_container
+from fastapi_fin import FinProxy, Module, open_container
 
 
 @dataclass(frozen=True)
@@ -39,7 +39,7 @@ class ReportsProvider(Provider):
     report_name = provide(ReportName, scope=Scope.REQUEST)
 
 
-application = Application(
+fin = FinProxy(
     modules=(
         Module(
             name="reports",
@@ -52,7 +52,7 @@ application = Application(
 
 
 async def main() -> None:
-    async with open_container(application, context={Job: Scope.REQUEST}) as root:
+    async with open_container(fin, context={Job: Scope.REQUEST}) as root:
         for filename in ("daily.csv", "weekly.csv"):
             async with root(scope=Scope.REQUEST, context={Job: Job(filename)}) as job:
                 report = await job.get(ReportName)

@@ -10,7 +10,7 @@ from typing import Protocol, cast
 from dishka import AsyncContainer, Provider, Scope, provide
 from fastapi import FastAPI
 
-from fastapi_fin import Application, FastAPIIntegration, Inject, Module
+from fastapi_fin import FastAPIIntegration, FinProxy, Inject, Module
 from fastapi_fin.adapters import CONTAINER_STATE_KEY
 
 # Resource lifecycle events, observable only by servers running inside the test process.
@@ -40,10 +40,8 @@ class Providers(Provider):
         EVENTS.append("database-closed")
 
 
-services = Application(
-    (Module("greetings", providers=(Providers(),), exports=(Greeting, Database)),)
-)
-integration = FastAPIIntegration(services)
+fin = FinProxy((Module("greetings", providers=(Providers(),), exports=(Greeting, Database)),))
+integration = FastAPIIntegration(fin)
 
 
 def add_hello_route(app: FastAPI) -> None:
@@ -57,8 +55,8 @@ add_hello_route(app)
 
 
 @asynccontextmanager
-async def warm_up_lifespan(application: FastAPI) -> AsyncIterator[dict[str, object]]:
-    async with integration.lifespan(application) as state:
+async def warm_up_lifespan(app: FastAPI) -> AsyncIterator[dict[str, object]]:
+    async with integration.lifespan(app) as state:
         container = cast("AsyncContainer", state[CONTAINER_STATE_KEY])
         await container.get(Database)
         yield state
@@ -72,7 +70,7 @@ class Missing:
     """A contract that no module exports."""
 
 
-misconfigured_app = FastAPI(lifespan=FastAPIIntegration(Application()).lifespan)
+misconfigured_app = FastAPI(lifespan=FastAPIIntegration(FinProxy()).lifespan)
 
 
 @misconfigured_app.get("/missing")

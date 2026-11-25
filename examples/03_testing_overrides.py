@@ -1,4 +1,4 @@
-"""Test an application factory with a replacement for an exported contract."""
+"""Test an app factory with a replacement for an exported contract."""
 
 from typing import Protocol
 
@@ -6,7 +6,7 @@ from dishka import Provider, Scope, provide
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from fastapi_fin import Application, FastAPIIntegration, Inject, Module
+from fastapi_fin import FastAPIIntegration, FinProxy, Inject, Module
 
 
 class Greeting(Protocol):
@@ -27,8 +27,8 @@ class GreetingProvider(Provider):
     greeting = provide(DefaultGreeting, provides=Greeting, scope=Scope.APP)
 
 
-def create_app(application: Application) -> FastAPI:
-    app = FastAPI(lifespan=FastAPIIntegration(application).lifespan)
+def create_app(fin: FinProxy) -> FastAPI:
+    app = FastAPI(lifespan=FastAPIIntegration(fin).lifespan)
 
     @app.get("/greeting")
     async def read_greeting(greeting: Inject[Greeting]) -> dict[str, str]:
@@ -39,15 +39,15 @@ def create_app(application: Application) -> FastAPI:
 
 def main() -> None:
     greetings = Module("greetings", providers=(GreetingProvider(),), exports=(Greeting,))
-    application = Application(modules=(greetings,))
-    test_application = application.with_overrides({Greeting: TestGreeting()})
+    fin = FinProxy(modules=(greetings,))
+    test_fin = fin.with_overrides({Greeting: TestGreeting()})
 
-    with TestClient(create_app(test_application)) as client:
+    with TestClient(create_app(test_fin)) as client:
         response = client.get("/greeting")
         assert response.status_code == 200
         assert response.json() == {"message": "Hello from the test!"}
 
-    with TestClient(create_app(application)) as client:
+    with TestClient(create_app(fin)) as client:
         response = client.get("/greeting")
         assert response.status_code == 200
         assert response.json() == {"message": "Welcome!"}

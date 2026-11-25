@@ -16,7 +16,7 @@ from fastapi.routing import APIRoute, APIWebSocketRoute
 from .._validation import Contract, ModuleName, normalize_contract
 from ..container import open_container
 from ..errors import AdapterError, AssemblyError, DefinitionError
-from ..modules import Application
+from ..modules import FinProxy
 
 CONTAINER_STATE_KEY: Final = "fastapi_fin_container"
 _REQUEST_STATE_KEY: Final = "_fastapi_fin_request_container"
@@ -75,21 +75,21 @@ else:
 
 @frozen
 class FastAPIIntegration:
-    """Own the application container through an explicit FastAPI lifespan."""
+    """Own the container built from a FinProxy through an explicit FastAPI lifespan."""
 
-    application: Application
+    fin: FinProxy
 
     def __attrs_post_init__(self) -> None:
-        if not isinstance(self.application, Application):
-            raise AdapterError("integration application must be an Application")
+        if not isinstance(self.fin, FinProxy):
+            raise AdapterError("FastAPIIntegration requires a FinProxy")
 
     @asynccontextmanager
     async def lifespan(self, app: FastAPI) -> AsyncIterator[dict[str, object]]:
         """Build a fresh container and expose it through ASGI lifespan state."""
         if not isinstance(app, FastAPI):
             raise AdapterError("lifespan requires a FastAPI application")
-        async with open_container(self.application, context=_FASTAPI_CONTEXT) as container:
-            _validate_injections(app, self.application.exports)
+        async with open_container(self.fin, context=_FASTAPI_CONTEXT) as container:
+            _validate_injections(app, self.fin.exports)
             yield {CONTAINER_STATE_KEY: container}
 
 
@@ -114,7 +114,7 @@ def _validate_injections(app: FastAPI, exports: Mapping[Contract, ModuleName]) -
 
 
 def _injections(app: FastAPI) -> Iterator[tuple[_RouteView, Contract]]:
-    """Yield one ``(route, contract)`` pair per ``Inject`` found on the application's routes."""
+    """Yield one ``(route, contract)`` pair per ``Inject`` found on the FastAPI app's routes."""
     return chain.from_iterable(map(_route_injections, _iter_route_views(app)))
 
 

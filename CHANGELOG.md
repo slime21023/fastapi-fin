@@ -8,9 +8,9 @@ First public release.
 
 ### Added
 
-- `Module` declares a module's public contracts and cross-module dependencies with `exports` and `requires`. `Application` combines modules and validates duplicate module names and exports.
+- `Module` declares a module's public contracts and cross-module dependencies with `exports` and `requires`. `FinProxy` combines modules and validates duplicate module names and exports.
 - `build_container()` and `open_container()` assemble a Dishka container. Each module is its own component and can only reach other modules through exported contracts. The dependency graph is validated with Dishka's strict validation; graph errors are raised as `AssemblyError` with the original exception kept as `__cause__`. Providers, `Scope`, and cleanup use Dishka's API directly.
-- `Application.with_overrides()` replaces an implementation per contract (an externally owned APP-scope instance). The override applies consistently to HTTP injection, other modules, and the exporting module itself.
+- `FinProxy.with_overrides()` replaces an implementation per contract (an externally owned APP-scope instance). The override applies consistently to HTTP injection, other modules, and the exporting module itself.
 - `FastAPIIntegration.lifespan` and `Inject[T]` inject services through native FastAPI `Depends`: no middleware, no route class changes, no endpoint wrapping. Routes are scanned at startup; injecting an unexported contract raises `AssemblyError`, and using `Inject` on a WebSocket route raises `AdapterError`.
 - Security: the `TokenAuthenticator` contract, `JwtIssuer` / `JwtVerifier` / `JwtKeySet`, the immutable `AuthenticatedPrincipal` and `PrincipalPolicy` (`require_scopes` / `require_roles`), and `FastAPISecurity`, which integrates OAuth2 scopes and HTTP 401/403 semantics. JWT support is an optional install through `fastapi-fin[security]`.
 - Uvicorn support: command-line single process and `--workers N`, resource cleanup after graceful shutdown, and refusing to start when a route injects an unexported contract. See the deployment guide.

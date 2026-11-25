@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from .container import build_container, open_container
 from .errors import AdapterError, AssemblyError, DefinitionError, FastAPIFinError
-from .modules import Application, Module
+from .modules import FinProxy, Module
 from .security import (
     AuthenticatedPrincipal,
     AuthenticationError,
@@ -44,7 +44,6 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "CONTAINER_STATE_KEY",
     "AdapterError",
-    "Application",
     "AssemblyError",
     "AuthenticatedPrincipal",
     "AuthenticationError",
@@ -53,6 +52,7 @@ __all__ = [
     "FastAPIFinError",
     "FastAPIIntegration",
     "FastAPISecurity",
+    "FinProxy",
     "Inject",
     "InsufficientScopeError",
     "InvalidTokenError",

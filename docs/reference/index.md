@@ -4,7 +4,7 @@ This section describes the public API of FastAPI-Fin, its assembly rules, and wh
 
 | Page | Contents |
 | --- | --- |
-| [Modules and container](modules.md) | `Module`, `Application`, contract overrides, the Dishka container, and context |
+| [Modules and container](modules.md) | `Module`, `FinProxy`, contract overrides, the Dishka container, and context |
 | [FastAPI integration](fastapi.md) | `Inject[T]`, `FastAPIIntegration.lifespan`, and startup validation |
 | [Security and JWT](security.md) | `TokenAuthenticator`, JWT, principal, policy, and `FastAPISecurity` |
 | [Errors](errors.md) | Exception hierarchy, when each is raised, and who handles it |

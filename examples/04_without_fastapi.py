@@ -1,10 +1,10 @@
-"""Resolve an exported contract from a worker without an HTTP application."""
+"""Resolve an exported contract from a worker without a FastAPI app."""
 
 import asyncio
 
 from dishka import Provider, Scope, provide
 
-from fastapi_fin import Application, Module, open_container
+from fastapi_fin import FinProxy, Module, open_container
 
 
 class Slugifier:
@@ -18,7 +18,7 @@ class PublishingProvider(Provider):
 
 async def main() -> None:
     publishing = Module("publishing", providers=(PublishingProvider(),), exports=(Slugifier,))
-    async with open_container(Application(modules=(publishing,))) as container:
+    async with open_container(FinProxy(modules=(publishing,))) as container:
         slugifier = await container.get(Slugifier)
         assert slugifier.slugify("  Contract First DI  ") == "contract-first-di"
 

@@ -8,10 +8,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from fastapi_fin import (
-    Application,
     AuthenticatedPrincipal,
     FastAPIIntegration,
     FastAPISecurity,
+    FinProxy,
     JwtIssuer,
     JwtVerifier,
     Module,
@@ -35,7 +35,7 @@ def main() -> None:
     issuer = JwtIssuer(key=key, algorithm="HS256", issuer=issuer_url, audience="api")
     verifier = JwtVerifier(key=key, algorithms=("HS256",), issuer=issuer_url, audience="api")
     auth = Module("auth", providers=(AuthProvider(verifier),), exports=(TokenAuthenticator,))
-    app = FastAPI(lifespan=FastAPIIntegration(Application(modules=(auth,))).lifespan)
+    app = FastAPI(lifespan=FastAPIIntegration(FinProxy(modules=(auth,))).lifespan)
     security = FastAPISecurity(token_url=f"{issuer_url}/token", scopes={"users:read": "Read users"})
 
     @app.get("/me")

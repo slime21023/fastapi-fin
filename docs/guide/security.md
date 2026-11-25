@@ -71,7 +71,7 @@ from typing import Annotated
 from dishka import Provider, Scope, provide
 from fastapi import FastAPI
 
-from fastapi_fin import Application, FastAPIIntegration, FastAPISecurity, Module
+from fastapi_fin import FastAPIIntegration, FastAPISecurity, FinProxy, Module
 from fastapi_fin.security import AuthenticatedPrincipal, TokenAuthenticator, require_roles
 
 
@@ -86,7 +86,7 @@ auth = Module(
     providers=(AuthProvider(),),
     exports=(TokenAuthenticator,),
 )
-integration = FastAPIIntegration(Application(modules=(auth,)))
+integration = FastAPIIntegration(FinProxy(modules=(auth,)))
 app = FastAPI(lifespan=integration.lifespan)
 security = FastAPISecurity(
     token_url="/token",
@@ -125,9 +125,9 @@ Another provider can supply a synchronous or asynchronous `TokenAuthenticator` i
 
 Name scopes per resource as `<resource>:<action>` (for example `docs:read` and `docs:write`) and declare them in `FastAPISecurity(scopes=...)`; a route that uses an undeclared scope raises `AdapterError` when it is defined. `security.require(policy)` returns a marker that works as an endpoint parameter and in `APIRouter(dependencies=[...])`. A router-level policy and a route-level policy both apply, so a router can require `docs:read` while one route also requires `docs:write`. Scopes are compared as exact strings; wildcards such as `docs:*` are not expanded.
 
-Rules that depend on data, such as "only the owner may edit this document", cannot be decided from the token. Put them in an exported service contract that receives the `AuthenticatedPrincipal`, and replace that service in tests with `Application.with_overrides()`. See [`07_resource_authorization.py`](https://github.com/slime21023/fastapi-fin/blob/main/examples/07_resource_authorization.py).
+Rules that depend on data, such as "only the owner may edit this document", cannot be decided from the token. Put them in an exported service contract that receives the `AuthenticatedPrincipal`, and replace that service in tests with `FinProxy.with_overrides()`. See [`07_resource_authorization.py`](https://github.com/slime21023/fastapi-fin/blob/main/examples/07_resource_authorization.py).
 
-Every `FastAPISecurity` instance resolves the same exported `TokenAuthenticator` contract, so one application trusts one authenticator. To accept tokens from several issuers, export a single authenticator that dispatches to the matching `JwtVerifier`.
+Every `FastAPISecurity` instance resolves the same exported `TokenAuthenticator` contract, so one `FinProxy` trusts one authenticator. To accept tokens from several issuers, export a single authenticator that dispatches to the matching `JwtVerifier`.
 
 ## Token lifecycle boundaries
 

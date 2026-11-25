@@ -9,10 +9,10 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from fastapi_fin import (
-    Application,
     AuthenticatedPrincipal,
     FastAPIIntegration,
     FastAPISecurity,
+    FinProxy,
     Inject,
     JwtIssuer,
     JwtVerifier,
@@ -83,8 +83,8 @@ async def read_stats() -> dict[str, int]:
     return {"documents": 1}
 
 
-def create_app(application: Application) -> FastAPI:
-    app = FastAPI(lifespan=FastAPIIntegration(application).lifespan)
+def create_app(fin: FinProxy) -> FastAPI:
+    app = FastAPI(lifespan=FastAPIIntegration(fin).lifespan)
     app.include_router(documents)
     app.include_router(admin)
     return app
@@ -104,7 +104,7 @@ def main() -> None:
     key = token_urlsafe(32)
     issuer = JwtIssuer(key=key, algorithm="HS256", issuer=ISSUER_URL, audience="api")
     verifier = JwtVerifier(key=key, algorithms=("HS256",), issuer=ISSUER_URL, audience="api")
-    application = Application(
+    fin = FinProxy(
         modules=(
             Module("auth", providers=(AuthProvider(verifier),), exports=(TokenAuthenticator,)),
             Module("documents", providers=(DocumentProvider(),), exports=(DocumentAccess,)),
@@ -116,7 +116,7 @@ def main() -> None:
     alice = bearer(issuer, "alice", scopes=editor_scopes)
     root = bearer(issuer, "root", scopes=editor_scopes, roles=("admin",))
 
-    with TestClient(create_app(application)) as client:
+    with TestClient(create_app(fin)) as client:
         assert client.get("/documents/1", headers=reader).status_code == 200
         read_only = client.put("/documents/1", headers=reader)
         assert read_only.status_code == 403
@@ -129,7 +129,7 @@ def main() -> None:
         assert client.get("/admin/stats", headers=bob).json() == {"detail": "forbidden"}
         assert client.get("/admin/stats", headers=root).json() == {"documents": 1}
 
-    bob_owns = application.with_overrides({DocumentAccess: OwnerOrAdminAccess(owners={1: "bob"})})
+    bob_owns = fin.with_overrides({DocumentAccess: OwnerOrAdminAccess(owners={1: "bob"})})
     with TestClient(create_app(bob_owns)) as client:
         assert client.put("/documents/1", headers=bob).status_code == 200
         assert client.put("/documents/1", headers=alice).status_code == 403

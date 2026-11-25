@@ -7,7 +7,7 @@ import pytest
 
 from fastapi_fin.adapters import FastAPIIntegration, FastAPISecurity
 from fastapi_fin.errors import AssemblyError
-from fastapi_fin.modules import Application, Module
+from fastapi_fin.modules import FinProxy, Module
 from fastapi_fin.security import (
     AuthenticatedPrincipal,
     JwtIssuer,
@@ -41,14 +41,14 @@ def build_security() -> tuple[JwtIssuer, FastAPISecurity, FastAPI]:
         issuer="https://issuer.example",
         audience="api",
     )
-    application = Application(
+    fin = FinProxy(
         modules=(Module("auth", providers=(AuthProvider(),), exports=(TokenAuthenticator,)),),
     )
     security = FastAPISecurity(
         token_url="/token",  # noqa: S106 — endpoint path, not a credential.
         scopes={"users:read": "Read users"},
     )
-    return issuer, security, FastAPI(lifespan=FastAPIIntegration(application).lifespan)
+    return issuer, security, FastAPI(lifespan=FastAPIIntegration(fin).lifespan)
 
 
 def test_fastapi_security_authenticates_bearer_and_documents_scopes() -> None:
@@ -131,7 +131,7 @@ def test_fastapi_security_scope_descriptions_are_read_only() -> None:
 
 @pytest.mark.anyio
 async def test_fastapi_security_requires_exported_token_authenticator_at_startup() -> None:
-    integration = FastAPIIntegration(Application())
+    integration = FastAPIIntegration(FinProxy())
     app = FastAPI(lifespan=integration.lifespan)
     security = FastAPISecurity()
 

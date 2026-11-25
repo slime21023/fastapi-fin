@@ -7,7 +7,7 @@ import pytest
 
 from fastapi_fin.container import build_container, open_container
 from fastapi_fin.errors import AssemblyError
-from fastapi_fin.modules import Application, Module
+from fastapi_fin.modules import FinProxy, Module
 
 
 class UserDirectory(Protocol):
@@ -45,14 +45,14 @@ class Orders(Provider):
 @pytest.mark.anyio
 @pytest.mark.parametrize("override", [False, True])
 async def test_contract_resolution_across_components(override: bool) -> None:
-    app = Application(
+    fin = FinProxy(
         (
             Module("users", (Users(),), exports=(UserDirectory, UserService)),
             Module("orders", (Orders(),), exports=(OrderService,), requires=(UserDirectory,)),
         )
     )
     fake = FakeDirectory()
-    composed = app.with_overrides({UserDirectory: fake}) if override else app
+    composed = fin.with_overrides({UserDirectory: fake}) if override else fin
 
     async with open_container(composed) as root:
         selected = await root.get(UserDirectory)
@@ -74,15 +74,13 @@ def test_internal_factory_cannot_be_used_implicitly_by_another_module() -> None:
     user_provider = Provider(scope=Scope.APP)
     user_provider.provide(UserTable)
     with pytest.raises(AssemblyError, match="dependency graph is invalid") as error:
-        build_container(
-            Application((Module("users", (user_provider,)), Module("other", (Other(),))))
-        )
+        build_container(FinProxy((Module("users", (user_provider,)), Module("other", (Other(),)))))
     assert isinstance(error.value.__cause__, InvalidGraphError)
 
 
 def test_export_needs_a_provider() -> None:
     with pytest.raises(AssemblyError, match="dependency graph is invalid"):
-        build_container(Application((Module("users", exports=(UserDirectory,)),)))
+        build_container(FinProxy((Module("users", exports=(UserDirectory,)),)))
 
 
 @pytest.mark.anyio
@@ -95,11 +93,11 @@ async def test_requires_can_be_supplied_as_scope_context() -> None:
         def clock_id(self, clock: Clock) -> int:
             return id(clock)
 
-    app = Application((Module("current", (Current(),), exports=(int,), requires=(Clock,)),))
+    fin = FinProxy((Module("current", (Current(),), exports=(int,), requires=(Clock,)),))
     with pytest.raises(AssemblyError, match=r"'current' requires .*Clock"):
-        build_container(app)
+        build_container(fin)
 
-    async with open_container(app, context={Clock: Scope.REQUEST}) as root:
+    async with open_container(fin, context={Clock: Scope.REQUEST}) as root:
         clock = Clock()
         async with root(context={Clock: clock}) as request:
             assert await request.get(int) == id(clock)
@@ -124,8 +122,8 @@ async def test_finalizes_each_scope_in_order() -> None:
             finally:
                 events.append("request")
 
-    app = Application((Module("resources", (Resources(),), exports=(str,)),))
-    async with open_container(app) as root:
+    fin = FinProxy((Module("resources", (Resources(),), exports=(str,)),))
+    async with open_container(fin) as root:
         async with root() as request:
             assert await request.get(str) == "42"
         assert events == ["request"]

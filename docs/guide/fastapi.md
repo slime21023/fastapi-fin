@@ -1,6 +1,6 @@
 # FastAPI integration
 
-Use native `FastAPI`, `APIRouter`, and `Depends`, and pass `FastAPIIntegration(application).lifespan` to `FastAPI(lifespan=...)`. On a parameter of an HTTP endpoint or nested dependency, write `service: Inject[Service]`, where `Service` must be an exported contract. `Inject[T]` is an `Annotated` carrying `Depends`; it does not turn the service into an OpenAPI parameter or request body. The integration adds no middleware, does not replace route classes, and does not wrap endpoints.
+Use native `FastAPI`, `APIRouter`, and `Depends`, and pass `FastAPIIntegration(fin).lifespan` to `FastAPI(lifespan=...)`. On a parameter of an HTTP endpoint or nested dependency, write `service: Inject[Service]`, where `Service` must be an exported contract. `Inject[T]` is an `Annotated` carrying `Depends`; it does not turn the service into an OpenAPI parameter or request body. The integration adds no middleware, does not replace route classes, and does not wrap endpoints.
 
 ## Compose your own lifespan
 
@@ -12,10 +12,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 
-from app import UserDirectory, application
+from app import UserDirectory, fin
 from fastapi_fin import FastAPIIntegration, Inject
 
-integration = FastAPIIntegration(application)
+integration = FastAPIIntegration(fin)
 
 
 @asynccontextmanager
@@ -43,5 +43,5 @@ Keep the state keys returned by the integration; do not overwrite them with your
 
 - `Inject` within the same HTTP request shares one Dishka `Scope.REQUEST` container. If a module needs to read the current request, it can declare `fastapi.Request` in `requires`, and a REQUEST-scope provider obtains it through an ordinary `request: Request` parameter. If an endpoint only needs the request object, use the native `Request` parameter directly instead of `Inject[Request]`.
 - At startup, the integration checks the registered FastAPI HTTP routes and recognizable nested dependencies (including a router's `dependencies`); injecting an unexported contract raises `AssemblyError`. Exceptions raised by service factories during resolution are not wrapped and can be handled by native FastAPI exception handling.
-- Mounted (`mount`) sub-applications are outside the parent application's startup scan. If the parent application provides state through its lifespan, HTTP requests to a mounted sub-application can still use that container; this does not mean the parent application has validated the sub-application's injections.
+- Mounted (`mount`) sub-apps are outside the parent app's startup scan. If the parent app provides state through its lifespan, HTTP requests to a mounted sub-app can still use that container; this does not mean the parent app has validated the sub-app's injections.
 - `Inject` supports HTTP only, not WebSocket; if the startup scan finds `Inject` on a WebSocket route, it raises `AdapterError`. Non-HTTP code should use [`open_container()`](scopes.md) to obtain services directly.

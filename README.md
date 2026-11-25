@@ -4,7 +4,7 @@ FastAPI-Fin is a contract-first dependency injection extension for FastAPI. You 
 
 - **Module contracts**: `Module.exports` publishes contracts and `Module.requires` declares cross-module dependencies. The dependency graph is validated at assembly time.
 - **Native FastAPI**: integrate with `Inject[T]` and a lifespan. No middleware, custom route class, or endpoint decorator is needed.
-- **Isolated testing**: `Application.with_overrides()` replaces a contract in a new container. Workers and tests can use `open_container()` directly.
+- **Isolated testing**: `FinProxy.with_overrides()` replaces a contract in a new container. Workers and tests can use `open_container()` directly.
 - **Plain Dishka**: build, scope, and clean up services with the native `Provider`, `provide`, and `Scope`.
 
 ## Quick start
@@ -23,7 +23,7 @@ from typing import Protocol
 from dishka import Provider, Scope, provide
 from fastapi import FastAPI
 
-from fastapi_fin import Application, FastAPIIntegration, Inject, Module
+from fastapi_fin import FastAPIIntegration, FinProxy, Inject, Module
 
 
 class Message(Protocol):
@@ -39,8 +39,8 @@ class Messages(Provider):
     message = provide(Hello, provides=Message, scope=Scope.APP)
 
 
-services = Application((Module("messages", providers=(Messages(),), exports=(Message,)),))
-app = FastAPI(lifespan=FastAPIIntegration(services).lifespan)
+fin = FinProxy((Module("messages", providers=(Messages(),), exports=(Message,)),))
+app = FastAPI(lifespan=FastAPIIntegration(fin).lifespan)
 
 
 @app.get("/")
@@ -61,8 +61,8 @@ The response is `{"message":"hello"}`. FastAPI-Fin only needs the ASGI lifespan,
 
 ```mermaid
 flowchart LR
-    Module["Module: exports / requires"] --> Application["Application"]
-    Application --> Build["build_container: Dishka"]
+    Module["Module: exports / requires"] --> FinProxy["FinProxy"]
+    FinProxy --> Build["build_container: Dishka"]
     Build --> Adapter["FastAPIIntegration: lifespan / Inject"]
     Build --> Worker["Worker / script"]
 ```

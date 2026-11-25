@@ -17,4 +17,4 @@ On success it prints `complete_app: OK`. The example signs JWTs with a temporary
 1. `domain.py`: Pydantic request/response models and the `TaskService` Protocol.
 2. `providers.py`: the `tasks` module provides an internal APP-scope repository with Dishka and exports only the REQUEST-scope `TaskService`; the `auth` module exports `TokenAuthenticator`, implemented by `JwtVerifier`.
 3. `routes.py`: a native `APIRouter` gets the service with `Inject[TaskService]` and applies the admin role rule with `FastAPISecurity`.
-4. `app.py`: `create_app(application)` wires the container with `FastAPIIntegration.lifespan` and mounts the router; `run_demo()` composes the modules and runs the HTTP checks.
+4. `app.py`: `create_app(fin)` wires the container with `FastAPIIntegration.lifespan` and mounts the router; `run_demo()` composes the modules into a `FinProxy` and runs the HTTP checks.

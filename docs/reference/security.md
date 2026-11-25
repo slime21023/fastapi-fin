@@ -233,7 +233,7 @@ FastAPISecurity(
 
 When `token_url` is set, FastAPI `OAuth2PasswordBearer` is used and `scopes` is published to OpenAPI; without `token_url`, `HTTPBearer` is used. Both use `auto_error=False`, so the adapter handles the authentication and authorization responses. The adapter does not create a token endpoint.
 
-The constructor does not accept an authenticator. The application must provide `TokenAuthenticator` through a Dishka provider, declare `exports=(TokenAuthenticator,)` in its `Module`, and include that module in the `Application` passed to `FastAPIIntegration`. If `token_url` is not `None`, it must be non-blank text; if `scopes` is provided, it must be a mapping of non-blank scope names to non-blank descriptions. Invalid settings raise `AdapterError`. For an example, see the [security guide](../guide/security.md).
+The constructor does not accept an authenticator. The application must provide `TokenAuthenticator` through a Dishka provider, declare `exports=(TokenAuthenticator,)` in its `Module`, and include that module in the `FinProxy` passed to `FastAPIIntegration`. If `token_url` is not `None`, it must be non-blank text; if `scopes` is provided, it must be a mapping of non-blank scope names to non-blank descriptions. Invalid settings raise `AdapterError`. For an example, see the [security guide](../guide/security.md).
 
 `scheme` is the optional FastAPI bearer scheme; `scopes` is a read-only mapping of scope descriptions copied at construction; `current_principal` is the dependency callable that resolves the bearer credential, injects the authenticator and checks FastAPI `SecurityScopes`. Regular routes use the two marker methods below.
 

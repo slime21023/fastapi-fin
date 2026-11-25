@@ -40,7 +40,7 @@ from fastapi import FastAPI
 
 from fastapi_fin import CONTAINER_STATE_KEY, FastAPIIntegration
 
-integration = FastAPIIntegration(application)  # your Application, with Database exported
+integration = FastAPIIntegration(fin)  # your FinProxy, with Database exported
 
 
 @asynccontextmanager

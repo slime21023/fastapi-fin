@@ -4,7 +4,7 @@ from dishka import Provider, Scope
 import pytest
 
 from fastapi_fin.errors import AssemblyError, DefinitionError
-from fastapi_fin.modules import Application, Module
+from fastapi_fin.modules import FinProxy, Module
 
 
 def context_provider() -> Provider:
@@ -45,17 +45,17 @@ def test_rejects_invalid_module(name: Any, options: dict[str, Any], message: str
         ({"overrides": {int: 0}}, AssemblyError, "not an exported contract"),
     ],
 )
-def test_rejects_invalid_application(
+def test_rejects_invalid_fin_proxy(
     options: dict[str, Any], error: type[Exception], message: str
 ) -> None:
     with pytest.raises(error, match=message):
-        Application(**options)
+        FinProxy(**options)
 
 
 def test_overrides_are_immutable_snapshots() -> None:
     source: dict[object, object] = {int: 1}
-    app = Application((Module("numbers", exports=(int,)),), source)
+    fin = FinProxy((Module("numbers", exports=(int,)),), source)
     source[int] = 2
-    replaced = app.with_overrides({int: 3})
-    assert app.overrides[int] == 1
+    replaced = fin.with_overrides({int: 3})
+    assert fin.overrides[int] == 1
     assert replaced.overrides[int] == 3
