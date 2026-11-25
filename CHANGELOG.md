@@ -2,9 +2,9 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.9.1] - 2026-11-24
+## [0.9.2] - 2026-11-25
 
-First public release.
+First public release. Version 0.9.1 was tagged in git but never published, so it has no entry.
 
 ### Added
 

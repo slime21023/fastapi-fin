@@ -1,6 +1,6 @@
 # Installation and your first app
 
-FastAPI-Fin 0.9.1 requires Python 3.12 or later. Install it with:
+FastAPI-Fin 0.9.2 requires Python 3.12 or later. Install it with:
 
 ```console
 pip install fastapi-fin

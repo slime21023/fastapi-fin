@@ -14,7 +14,7 @@ from .routes import router as task_router
 def create_app(composition: FinComposition) -> FastAPI:
     app = FastAPI(
         title="FastAPI-Fin complete Task API",
-        version="0.9.1",
+        version="0.9.2",
         lifespan=FastAPIIntegration(composition).lifespan,
     )
     app.include_router(task_router)

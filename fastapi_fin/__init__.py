@@ -28,7 +28,7 @@ from .security import (
 if TYPE_CHECKING:
     from .adapters import CONTAINER_STATE_KEY, FastAPIIntegration, FastAPISecurity, Inject
 
-__version__ = "0.9.1"
+__version__ = "0.9.2"
 
 
 def __getattr__(name: str) -> object:
